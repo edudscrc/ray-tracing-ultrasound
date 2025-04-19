@@ -126,6 +126,20 @@ def uhp(x):
     return x
 
 
+def reflect(gamma1, dydx):
+    """Computes the the new angle  after the reflection
+    of the first angle with the Law of Reflection"""
+
+    gamma1 = uhp(gamma1)
+    slope = rhp(np.arctan(dydx))
+    normal = slope + np.pi / 2
+    theta1 = gamma1 - normal
+    theta2 = -theta1
+    gamma2 = normal + theta2
+
+    return gamma2
+
+
 def snell(gamma1, dydx, v1, v2):
     """Computes the the new angle  after the refraction
     of the first angle with the Snell's law (top-down)"""
