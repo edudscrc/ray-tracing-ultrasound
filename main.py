@@ -106,7 +106,7 @@ def dydx_from_alpha(alpha):
     return dydx
 
 
-def dxdy_pipe(x, r_pipe):
+def dxdy_tube(x, r_pipe):
     """Computes the slope of the cilinder (pipe) for a given x"""
     return -x / np.sqrt(r_pipe**2 - x**2)
 
@@ -140,64 +140,80 @@ def snell(gamma1, dydx, v1, v2):
     return gamma2
 
 
-def distalpha(xc, yc, xf, yf, acurve):
+def distalpha(xc, yc, xf, yf, alpha_lens):
     """For a shot fired from (xc, yc) in the direction x_y_from_alpha(alpha),
     this function computes the two refractions (from c1 to c2 and from
     c2 to c3) and then computes the squared distance between the ray at c3 and
     the "pixel" (xf, yf). A dictionary is returned with the following information:
 
     (x_lens, y_lens): position where the ray hits the lens
-    (xcirc, ycirc): position where the ray hits the circle (cylinder)
+    (x_pipe, y_pipe): position where the ray hits the pipe
     (xin, yin): point on the ray closest to (xf, yf)
     dist: squared distance (xin, yin) to (xf, yf)"""
 
-    x_lens, y_lens = x_y_from_alpha(acurve)
+    # Position where the ray hits the lens
+    x_lens, y_lens = x_y_from_alpha(alpha_lens)
+    # Angle of the incident ray
     gamma1 = np.arctan((y_lens - yc) / (x_lens - xc))
     gamma1 = gamma1 + (gamma1 < 0) * np.pi
-    dydx = dydx_from_alpha(acurve)
+    # Slope of the tangent line at (x_lens, y_lens)
+    dydx = dydx_from_alpha(alpha_lens)
+
+    # First refraction (c_lens -> c_water)
     gamma2 = snell(gamma1, dydx, c_lens, c_water)
+
     a_line = np.tan(uhp(gamma2))
     b_line = y_lens - a_line * x_lens
     a = a_line**2 + 1
     b = 2 * a_line * b_line
     c = b_line**2 - radius_pipe**2
-    xcirc1, xcirc2 = roots_bhaskara(a, b, c)
-    ycirc1, ycirc2 = a_line * xcirc1 + b_line, a_line * xcirc2 + b_line
-    upper = ycirc1 > ycirc2
-    xcirc = xcirc1 * upper + xcirc2 * (1 - upper)
-    ycirc = ycirc1 * upper + ycirc2 * (1 - upper)
-    dxdycirc = dxdy_pipe(xcirc, radius_pipe)
-    gamma3 = snell(gamma2, dxdycirc, c_water, c_pipe)
+    x_pipe1, x_pipe2 = roots_bhaskara(a, b, c)
+    y_pipe1 = a_line * x_pipe1 + b_line
+    y_pipe2 = a_line * x_pipe2 + b_line
+    upper = y_pipe1 > y_pipe2
+    x_pipe = x_pipe1 * upper + x_pipe2 * (1 - upper)
+    y_pipe = y_pipe1 * upper + y_pipe2 * (1 - upper)
+    dxdy_pipe = dxdy_tube(x_pipe, radius_pipe)
+
+    # Second refraction (c_water -> c_pipe)
+    gamma3 = snell(gamma2, dxdy_pipe, c_water, c_pipe)
+
     a3 = np.tan(gamma3)
-    b3 = ycirc - a3 * xcirc
-    xbottom = -b3 / a3
+    b3 = y_pipe - a3 * x_pipe
     a4 = -1 / a3
     b4 = yf - a4 * xf
     xin = (b4 - b3) / (a3 - a4)
     yin = a3 * xin + b3
     dist = (xin - xf) ** 2 + (yin - yf) ** 2
-    dic = {
+
+    results = {
         "x_lens": x_lens,
         "y_lens": y_lens,
-        "xcirc": xcirc,
-        "ycirc": ycirc,
+        "x_pipe": x_pipe,
+        "y_pipe": y_pipe,
         "xin": xin,
         "yin": yin,
         "dist": dist,
     }
-    return dic
+
+    return results
 
 
-def dist_and_derivatives(xc, yc, xf, yf, alpha_lens, eps=1e-5):
+def distance_and_derivatives(xc, yc, xf, yf, alpha_lens, eps=1e-5):
     """Computes the squared distance using distalpha as well as the first and
     second derivatives of the squared distance with relation to alpha."""
-    dm = distalpha(xc, yc, xf, yf, alpha_lens - eps)["dist"]
-    dic = distalpha(xc, yc, xf, yf, alpha_lens)
-    d0 = dic["dist"]
-    dp = distalpha(xc, yc, xf, yf, alpha_lens + eps)["dist"]
-    der1 = (dp - dm) * 0.5 / eps
-    der2 = (dm - 2 * d0 + dp) / eps**2
-    return dic, der1, der2
+
+    results = distalpha(xc, yc, xf, yf, alpha_lens)
+
+    distance_minus = distalpha(xc, yc, xf, yf, alpha_lens - eps)["dist"]
+    distance = results["dist"]
+    distance_plus = distalpha(xc, yc, xf, yf, alpha_lens + eps)["dist"]
+
+    # Finite Differences (Central Difference)
+    first_derivative = (distance_plus - distance_minus) * 0.5 / eps
+    second_derivative = (distance_minus - 2 * distance + distance_plus) / eps**2
+
+    return results, first_derivative, second_derivative
 
 
 def newton(xc, yc, xf, yf, alpha_initial_guess=None, iter=6):
@@ -224,7 +240,7 @@ def newton(xc, yc, xf, yf, alpha_initial_guess=None, iter=6):
     -------
     dic : dict
 		(x_lens, y_lens): position where the ray hits the lens.
-		(xcirc, ycirc): position where the ray hits the circle (cylinder).
+		(x_pipe, y_pipe): position where the ray hits the pipe.
 		(xin, yin): point on the ray closest to (xf, yf).
 		dist: squared distance (xin, yin) to (xf, yf) (should be close to zero).
 		maxdist: maximum squared distance (assuming an array of pixels was passed).
@@ -237,15 +253,19 @@ def newton(xc, yc, xf, yf, alpha_initial_guess=None, iter=6):
     maxdist = []
     mindist = []
     for _ in range(iter):
-        dic, d1, _ = dist_and_derivatives(xc, yc, xf, yf, alpha_initial_guess, eps=1e-4)
-        alpha_initial_guess -= dic["dist"] / d1
-        alpha_initial_guess[alpha_initial_guess > alpha_max] = alpha_max * 0.9
-        alpha_initial_guess[alpha_initial_guess < -alpha_max] = -alpha_max * 0.9
-        maxdist.append(dic["dist"].max())
-        mindist.append(dic["dist"].min())
-    dic["maxdist"] = maxdist
-    dic["mindist"] = mindist
-    return dic
+        results, first_derivative, _ = distance_and_derivatives(xc, yc, xf, yf, alpha_initial_guess, eps=1e-4)
+
+        alpha_initial_guess -= results["dist"] / first_derivative
+        alpha_initial_guess[alpha_initial_guess > alpha_max] = roi_angle_max
+        alpha_initial_guess[alpha_initial_guess < -alpha_max] = -roi_angle_max
+
+        maxdist.append(results["dist"].max())
+        mindist.append(results["dist"].min())
+
+    results["maxdist"] = maxdist
+    results["mindist"] = mindist
+
+    return results
 
 
 def newton_batch(xc, yc, xf, yf, iter=6):
@@ -271,7 +291,7 @@ def newton_batch(xc, yc, xf, yf, iter=6):
         -------
         results : dict
 			(x_lens, y_lens): position where the ray hits the lens.
-			(xcirc, ycirc): position where the ray hits the circle (cylinder).
+			(x_pipe, y_pipe): position where the ray hits the pipe.
 			(xin, yin): point on the ray closest to (xf, yf).
 			dist: squared distance (xin, yin) to (xf, yf) (should be close to zero).
 			maxdist: maximum squared distance (assuming an array of pixels was passed).
@@ -353,65 +373,17 @@ def plot_diamond():
     plt.plot([0], [0], "or")
     plt.plot([0], [d0], "sk")
     plt.axis("equal")
-    plt.show()
 
 
-########## COMPUTATION OF ENTRY POINTS WITH NEWTON'S METHOD ########
+def dist(x1, y1, x2, y2):
+    return np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
 
-
-
-
-
-# i_elem = 34
-
-# plt.figure()
-# plt.semilogy(results[i_elem]["maxdist"], "o-")
-# plt.semilogy(results[i_elem]["mindist"], "o-")
-# plt.grid()
-# plt.xlabel("iteration")
-# plt.ylabel("Distances")
-# plt.legend(["Max distance", "Min distance"])
-# plt.title("Newton algorithm convergence fof element " + str(i_elem))
-
-
-# def dist(x1, y1, x2, y2):
-#     return np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
-
-
-# n = 1
-# tof = dist(xc[n], yc[n], results[n]["xcurve"], results[n]["ycurve"]) / c1
-# tof += (
-#     dist(
-#         results[n]["xcurve"],
-#         results[n]["ycurve"],
-#         results[n]["xcirc"],
-#         results[n]["ycirc"],
-#     )
-#     / c2
-# )
-# tof += dist(results[n]["xcirc"], results[n]["ycirc"], xf, yf) / c3
-# tof = tof.reshape((len(rf), len(af)))
-# plt.figure()
-# plt.imshow(tof)
-# plt.colorbar()
-# plt.axis("auto")
-# plt.title("Times of flight for element " + str(N_elem - 1))
-
-
-# plot_diamond()
-# plt.plot(xc, yc, ".k")
-# for i in np.arange(0, len(af), 10):
-#     plt.plot(
-#         [xc[n], results[n]["xcurve"][i], results[n]["xcirc"][i], xf[i]],
-#         [yc[n], results[n]["ycurve"][i], results[n]["ycirc"][i], yf[i]],
-#         "C2",
-#         alpha=0.3,
-#     )
 
 if __name__ == "__main__":
     plot_diamond()
+    plt.show()
 
-        # 'xc' and 'yc' are arrays of the positions (x, y) of each transducer's element
+    # 'xc' and 'yc' are arrays of the positions (x, y) of each transducer's element
     xc = np.arange(num_elements) * pitch
     xc = xc - np.mean(xc)
     yc = np.ones_like(xc) * d0
@@ -423,7 +395,7 @@ if __name__ == "__main__":
     Af = Af.flatten()
     Rf = Rf.flatten()
 
-        # 'xf' and 'yf' are arrays of the positions (x, y) of each target (the suffix 'f' means fire)
+    # 'xf' and 'yf' are arrays of the positions (x, y) of each target (the suffix 'f' means fire)
     xf = Rf * np.sin(Af)
     yf = Rf * np.cos(Af)
 
@@ -431,3 +403,57 @@ if __name__ == "__main__":
     results = newton_batch(xc, yc, xf, yf, iter=20)
     end = time.time()
     print(f"Elapsed time - newton_batch: {end - start} seconds.")
+
+    idx_element = 15
+
+    plt.figure()
+    plt.semilogy(results[idx_element]["maxdist"], "o-")
+    plt.semilogy(results[idx_element]["mindist"], "o-")
+    plt.grid()
+    plt.xlabel("iteration")
+    plt.ylabel("Distances")
+    plt.legend(["Max distance", "Min distance"])
+    plt.title(f"Newton algorithm convergence fof element {idx_element}")
+    plt.show()
+
+    tof = dist(
+        xc[idx_element],
+        yc[idx_element],
+        results[idx_element]["x_lens"],
+        results[idx_element]["y_lens"],
+    ) / c_lens
+
+    tof += dist(
+        results[idx_element]["x_lens"],
+        results[idx_element]["y_lens"],
+        results[idx_element]["x_pipe"],
+        results[idx_element]["y_pipe"],
+    ) / c_water
+
+    tof += dist(
+        results[idx_element]["x_pipe"],
+        results[idx_element]["y_pipe"],
+        xf,
+        yf,
+    ) / c_pipe
+
+    tof = tof.reshape((len(rf), len(af)))
+    
+    plt.figure()
+    plt.imshow(tof)
+    plt.colorbar()
+    plt.axis("auto")
+    plt.title(f"Times of flight for element {idx_element}")
+    plt.show()
+
+    plot_diamond()
+
+    plt.plot(xc, yc, ".k")
+    for i in np.arange(0, len(af), 10):
+        plt.plot(
+            [xc[idx_element], results[idx_element]["x_lens"][i], results[idx_element]["x_pipe"][i], xf[i]],
+            [yc[idx_element], results[idx_element]["y_lens"][i], results[idx_element]["y_pipe"][i], yf[i]],
+            "C2",
+            alpha=0.3,
+        )
+    plt.show()
