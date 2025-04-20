@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+import copy
 
 # Speeds of sound
 c_lens = 6400
@@ -135,7 +136,8 @@ def reflect(gamma1, dydx):
     normal = slope + np.pi / 2
     theta1 = gamma1 - normal
     theta2 = -theta1
-    gamma2 = normal + theta2
+    # gamma2 = slope + np.pi / 2 + theta2
+    gamma2 = slope - np.pi / 2 + theta2
 
     return gamma2
 
@@ -169,14 +171,13 @@ def distalpha(xc, yc, xf, yf, alpha_lens):
     x_lens, y_lens = x_y_from_alpha(alpha_lens)
     # Angle of the incident ray
     gamma1 = np.arctan((y_lens - yc) / (x_lens - xc))
-    gamma1 = gamma1 + (gamma1 < 0) * np.pi
     # Slope of the tangent line at (x_lens, y_lens)
     dydx = dydx_from_alpha(alpha_lens)
 
     # First refraction (c_lens -> c_water)
     gamma2 = snell(gamma1, dydx, c_lens, c_water)
 
-    a_line = np.tan(uhp(gamma2))
+    a_line = np.tan(gamma2)
     b_line = y_lens - a_line * x_lens
     a = a_line**2 + 1
     b = 2 * a_line * b_line
@@ -189,15 +190,33 @@ def distalpha(xc, yc, xf, yf, alpha_lens):
     y_pipe = y_pipe1 * upper + y_pipe2 * (1 - upper)
     dxdy_pipe = dxdy_tube(x_pipe, radius_pipe)
 
-    # Second refraction (c_water -> c_pipe)
-    gamma3 = snell(gamma2, dxdy_pipe, c_water, c_pipe)
+    gamma3 = reflect(gamma2, dxdy_pipe)
 
-    a3 = np.tan(gamma3)
-    b3 = y_pipe - a3 * x_pipe
-    a4 = -1 / a3
+    a_line2 = np.tan(gamma3)
+    b_line2 = y_pipe - a_line2 * x_pipe
+
+    possible_alphas = np.linspace(-alpha_max, alpha_max, 181)
+
+    t = r0 / c_lens + z0 / c_water
+    a = c_lens**2 / c_water**2 - 1
+    c = c_lens**2 * t**2 - d0**2
+    phi2 = -2 * t * c_lens**2 / c_water
+    phi3 = 2 * d0
+    b = phi2 + phi3 * np.cos(possible_alphas)
+    z = roots_bhaskara(a, b, c)[1]
+    y_lens2 = z * np.cos(possible_alphas)
+    x_lens2 = z * np.sin(possible_alphas)
+
+
+    # Second refraction (c_water -> c_pipe)
+    # gamma3 = snell(gamma2, dxdy_pipe, c_water, c_pipe)
+
+    a3_line = np.tan(gamma3)
+    b3_line = y_pipe - a3_line * x_pipe
+    a4 = -1 / a3_line
     b4 = yf - a4 * xf
-    xin = (b4 - b3) / (a3 - a4)
-    yin = a3 * xin + b3
+    xin = (b4 - b3_line) / (a3_line - a4)
+    yin = a3_line * xin + b3_line
     dist = (xin - xf) ** 2 + (yin - yf) ** 2
 
     results = {
@@ -205,6 +224,8 @@ def distalpha(xc, yc, xf, yf, alpha_lens):
         "y_lens": y_lens,
         "x_pipe": x_pipe,
         "y_pipe": y_pipe,
+        "x_lens2": x_lens2,
+        "y_lens2": y_lens2,
         "xin": xin,
         "yin": yin,
         "dist": dist,
@@ -465,8 +486,8 @@ if __name__ == "__main__":
     plt.plot(xc, yc, ".k")
     for i in np.arange(0, len(af), 10):
         plt.plot(
-            [xc[idx_element], results[idx_element]["x_lens"][i], results[idx_element]["x_pipe"][i], xf[i]],
-            [yc[idx_element], results[idx_element]["y_lens"][i], results[idx_element]["y_pipe"][i], yf[i]],
+            [xc[idx_element], results[idx_element]["x_lens"][i], results[idx_element]["x_pipe"][i], results[idx_element]["x_lens2"][i]],
+            [yc[idx_element], results[idx_element]["y_lens"][i], results[idx_element]["y_pipe"][i], results[idx_element]["y_lens2"][i]],
             "C2",
             alpha=0.3,
         )
