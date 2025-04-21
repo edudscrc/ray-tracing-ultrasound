@@ -28,6 +28,171 @@ roi_radius_min = radius_pipe - 0.02
 num_roi_angle_points = 181
 
 
+def find_line_curve_intersection(x_line, y_line, x_curve, y_curve):
+    """
+    Finds the intersection point between a line (defined by points x_line, y_line)
+    and a curve (defined by points x_curve, y_curve).
+
+    Assumes the curve points are ordered generally along the x-axis,
+    though strict sorting is not required if the crossing is unique.
+
+    Args:
+        x_line (np.ndarray): X-coordinates of points on the line.
+        y_line (np.ndarray): Y-coordinates of points on the line.
+        x_curve (np.ndarray): X-coordinates of points on the curve.
+        y_curve (np.ndarray): Y-coordinates of points on the curve.
+
+    Returns:
+        tuple: (x_intersect, y_intersect) coordinates of the intersection point,
+               or (None, None) if no intersection is found between segments.
+    """
+    if len(x_line) < 2 or len(y_line) < 2:
+        raise ValueError("Line needs at least two points to be defined.")
+    if len(x_curve) < 2 or len(y_curve) < 2:
+        raise ValueError("Curve needs at least two points.")
+    if len(x_line) != len(y_line) or len(x_curve) != len(y_curve):
+        raise ValueError("Coordinate arrays must have the same length.")
+
+    # 1. Find the Line Equation (y = mx + b) using polyfit (linear regression)
+    # Check for vertical line first (infinite slope)
+    if np.all(np.isclose(x_line, x_line[0])):
+        # Vertical line: x = constant
+        line_x_const = x_line[0]
+        # print(f"Detected vertical line: x = {line_x_const}")
+
+        # Find where the curve crosses this x-value
+        # Calculate where x_curve crosses line_x_const
+        cross_indices = np.where(np.diff(np.sign(x_curve - line_x_const)) != 0)[0]
+
+        if len(cross_indices) == 0:
+             # Check if any curve point lies exactly on the line
+             on_line = np.isclose(x_curve, line_x_const)
+             if np.any(on_line):
+                 idx = np.where(on_line)[0][0]
+                #  print(f"Curve point {idx} lies exactly on the vertical line.")
+                 return x_curve[idx], y_curve[idx]
+             else:
+                # print("No intersection found (vertical line does not cross curve segments).")
+                return None, None
+
+        # Take the first crossing index
+        idx = cross_indices[0]
+
+        # Linear interpolation for y at x = line_x_const, between points idx and idx+1
+        x1, x2 = x_curve[idx], x_curve[idx+1]
+        y1, y2 = y_curve[idx], y_curve[idx+1]
+
+        # Avoid division by zero if segment is vertical (shouldn't happen if crossing)
+        if np.isclose(x1, x2):
+            #  print(f"Warning: Curve segment {idx}-{idx+1} is vertical, using midpoint y.")
+             y_intersect = (y1 + y2) / 2.0
+             return line_x_const, y_intersect
+
+        # Interpolate y
+        y_intersect = y1 + (y2 - y1) * (line_x_const - x1) / (x2 - x1)
+        # print(f"Intersection found on vertical line between curve points {idx} and {idx+1}")
+        return line_x_const, y_intersect
+
+    else:
+        # Non-vertical line
+        coeffs = np.polyfit(x_line, y_line, 1)
+        m, b = coeffs[0], coeffs[1]
+        # print(f"Line equation: y = {m:.4f}x + {b:.4f}")
+
+        # 2. Calculate Vertical Differences
+        line_y_at_curve_x = m * x_curve + b
+        diffs = y_curve - line_y_at_curve_x
+
+        # 3. Find Sign Changes
+        sign_changes = np.where(np.diff(np.sign(diffs)) != 0)[0]
+
+        if len(sign_changes) == 0:
+            # Check if any curve point lies exactly on the line
+            on_line = np.isclose(diffs, 0)
+            if np.any(on_line):
+                 idx = np.where(on_line)[0][0]
+                #  print(f"Curve point {idx} lies exactly on the line.")
+                 return x_curve[idx], y_curve[idx]
+            else:
+                # print("No intersection found (line does not cross curve segments).")
+                # Optional: Could return the point of closest approach
+                # min_diff_idx = np.argmin(np.abs(diffs))
+                # return x_curve[min_diff_idx], y_curve[min_diff_idx] # Closest point approx
+                return None, None
+
+        # Take the first sign change index
+        idx = sign_changes[0]
+        # print(f"Sign change detected between curve points {idx} and {idx+1}")
+
+        # 4. Interpolate the Intersection
+        # We need to find x_intersect such that:
+        # y_curve_interpolated(x_intersect) = m * x_intersect + b
+        # Let the curve segment be linear between points idx and idx+1
+        x1, y1 = x_curve[idx], y_curve[idx]
+        x2, y2 = x_curve[idx+1], y_curve[idx+1]
+
+        # Handle vertical curve segment
+        if np.isclose(x1, x2):
+            # print(f"Curve segment {idx}-{idx+1} is vertical at x={x1}")
+            x_intersect = x1
+            y_intersect = m * x_intersect + b
+            # Check if this y is within the segment's y-bounds
+            y_min, y_max = min(y1, y2), max(y1, y2)
+            if y_intersect >= y_min - 1e-9 and y_intersect <= y_max + 1e-9: # Use tolerance
+                #  print("Intersection found on vertical curve segment.")
+                 return x_intersect, y_intersect
+            else:
+                #  print("Intersection point y is outside the vertical segment bounds.")
+                 # This case should ideally not happen if a sign change was correctly detected unless line is also vertical there
+                 # Continue searching if multiple sign changes exist? For now, return None.
+                 return None, None
+
+
+        # Equation of the line segment (y = m_seg * x + b_seg)
+        m_seg = (y2 - y1) / (x2 - x1)
+        b_seg = y1 - m_seg * x1
+
+        # Find x where the two lines intersect: m*x + b = m_seg*x + b_seg
+        if np.isclose(m, m_seg):
+            # Lines are parallel
+            if np.isclose(b, b_seg):
+                # print(f"Line and curve segment {idx}-{idx+1} are collinear.")
+                # Any point on the overlapping segment is an intersection. Return midpoint?
+                # Need to define behaviour here. Returning the segment midpoint for now.
+                x_intersect = (x1 + x2) / 2.0
+                y_intersect = m * x_intersect + b
+                return x_intersect, y_intersect
+            else:
+                # print(f"Line and curve segment {idx}-{idx+1} are parallel but not collinear.")
+                # This shouldn't happen if a sign change was detected across them
+                # Maybe try next sign change if available? For now, return None.
+                return None, None
+
+        # Solve for x_intersect: (m - m_seg) * x = b_seg - b
+        x_intersect = (b_seg - b) / (m - m_seg)
+
+        # Calculate y_intersect using the main line equation
+        y_intersect = m * x_intersect + b
+
+        # Optional sanity check: Ensure intersection lies within the segment bounds
+        x_min, x_max = min(x1, x2), max(x1, x2)
+        y_min, y_max = min(y1, y2), max(y1, y2) # Using y bounds as well
+
+        # Use tolerance for float comparisons
+        if (x_intersect >= x_min - 1e-9 and x_intersect <= x_max + 1e-9 and
+            y_intersect >= y_min - 1e-9 and y_intersect <= y_max + 1e-9):
+            #  print("Intersection confirmed within segment bounds.")
+             return x_intersect, y_intersect
+        else:
+             # This indicates something went wrong, e.g., multiple intersections
+             # or issues with the sign change logic for the given data.
+            #  print("Warning: Calculated intersection point is outside the segment bounds where sign change was detected.")
+            #  print(f"  Segment X: [{x1:.4f}, {x2:.4f}], Intersect X: {x_intersect:.4f}")
+            #  print(f"  Segment Y: [{y1:.4f}, {y2:.4f}], Intersect Y: {y_intersect:.4f}")
+             # Could try searching other sign changes if len(sign_changes)>1
+             return None, None # Or maybe return the calculated point anyway?
+
+
 def roots_bhaskara(a, b, c):
     """Computes the roots of the polynomial ax^2 + bx + c = 0"""
 
@@ -103,14 +268,15 @@ def dydx_from_alpha(alpha):
     _alpha = np.pi / 2 - alpha
     dzda = -dzda_from_alpha(alpha)
     z, _ = z_r_from_alpha(alpha)
-    dydx = (dzda * np.sin(_alpha) + z * np.cos(_alpha)) / (dzda * np.cos(_alpha) - z * np.sin(_alpha))
+    dy = dzda * np.sin(_alpha) + z * np.cos(_alpha)
+    dx = dzda * np.cos(_alpha) - z * np.sin(_alpha)
     
-    return dydx
+    return dy, dx
 
 
 def dxdy_tube(x, r_pipe):
     """Computes the slope of the cilinder (pipe) for a given x"""
-    return -x / np.sqrt(r_pipe**2 - x**2)
+    return -x, np.sqrt(r_pipe**2 - x**2)
 
 
 def rhp(x):
@@ -128,26 +294,28 @@ def uhp(x):
     return x
 
 
-def reflect(gamma1, dydx):
+def reflect(gamma1, dx, dy):
     """Computes the the new angle  after the reflection
     of the first angle with the Law of Reflection"""
 
-    gamma1 = uhp(gamma1)
-    slope = rhp(np.arctan(dydx))
+    gamma1 = gamma1
+    slope = np.arctan2(dx, dy)
     normal = slope + np.pi / 2
     theta1 = gamma1 - normal
     theta2 = -theta1
-    gamma2 = slope - np.pi / 2 + theta2
+
+    # gamma2 = slope - np.pi / 2 - theta2 - theta2  # g1 > 0
+    gamma2 = slope - np.pi / 2 + theta2  # g1 < 0
 
     return gamma2
 
 
-def snell(gamma1, dydx, v1, v2):
+def snell(gamma1, dx, dy, v1, v2):
     """Computes the the new angle  after the refraction
     of the first angle with the Snell's law (top-down)"""
 
-    gamma1 = uhp(gamma1)
-    slope = rhp(np.arctan(dydx))
+    gamma1 = gamma1
+    slope = np.arctan2(dx, dy)
     normal = slope + np.pi / 2
     theta1 = gamma1 - normal
     theta2 = np.arcsin(np.sin(theta1) * v2 / v1)
@@ -170,76 +338,91 @@ def distalpha(xc, yc, xf, yf, alpha_lens):
     # Position where the ray hits the lens
     x_lens, y_lens = x_y_from_alpha(alpha_lens)
     # Angle of the incident ray
-    gamma1 = np.arctan((y_lens - yc) / (x_lens - xc))
+    gamma1 = np.arctan2(y_lens - yc, x_lens - xc)
     # Slope of the tangent line at (x_lens, y_lens)
-    dydx = dydx_from_alpha(alpha_lens)
+    dy, dx = dydx_from_alpha(alpha_lens)
 
     # First refraction (c_lens -> c_water)
-    gamma2 = snell(gamma1, dydx, c_lens, c_water)
+    gamma2 = snell(gamma1, dy, dx, c_lens, c_water)
+    
+    # gamma2 = reflect(gamma1, dy, dx)
 
     a_line = np.tan(gamma2)
     b_line = y_lens - a_line * x_lens
+
+    # x = [None] * num_roi_angle_points
+    # y = [None] * num_roi_angle_points
+    # for ray_idx in range(num_roi_angle_points):
+    #     x[ray_idx] = np.linspace(x_lens[ray_idx] - 0.06, y_lens[ray_idx] + 0.06, num_roi_angle_points)
+        
+    #     # Utiliza várias coordenadas x (linspace) para encontrar vários valores da reta "de reflexão"
+    #     y[ray_idx] = a_line[ray_idx] * x[ray_idx] + b_line[ray_idx]
+
+    #     plot_diamond()
+    #     plt.plot(x[ray_idx], y[ray_idx], markersize=1, linewidth=1, color='red')
+    #     plt.plot(
+    #         [xc, x_lens[ray_idx]],
+    #         [yc, y_lens[ray_idx]],
+    #         "C2",
+    #         alpha=0.3,
+    #     )
+    #     plt.show()
+
     a = a_line**2 + 1
     b = 2 * a_line * b_line
     c = b_line**2 - radius_pipe**2
     x_pipe1, x_pipe2 = roots_bhaskara(a, b, c)
     y_pipe1 = a_line * x_pipe1 + b_line
     y_pipe2 = a_line * x_pipe2 + b_line
-    upper = y_pipe1 > y_pipe2
-    x_pipe = x_pipe1 * upper + x_pipe2 * (1 - upper)
-    y_pipe = y_pipe1 * upper + y_pipe2 * (1 - upper)
-    dxdy_pipe = dxdy_tube(x_pipe, radius_pipe)
+    x_pipe = np.where(y_pipe1 > y_pipe2, x_pipe1, x_pipe2)
+    y_pipe = np.where(y_pipe1 > y_pipe2, y_pipe1, y_pipe2)
+    dx_pipe, dy_pipe = dxdy_tube(x_pipe, radius_pipe)
 
-    # ================
-    # === REFLEXÃO ===
-    # ================
+    # ==================
+    # === REFLECTION ===
+    # ==================
 
-    gamma3 = reflect(gamma2, dxdy_pipe)
+    possible_alphas = np.linspace(-alpha_max, alpha_max, num_roi_angle_points)
+    possible_x_lens2, possible_y_lens2 = x_y_from_alpha(possible_alphas)
 
-    a_line2 = np.tan(gamma3)
+    gamma3 = reflect(gamma2, dx_pipe, dy_pipe)
+
+    a_line2 = np.tan(rhp(gamma3))
     b_line2 = y_pipe - a_line2 * x_pipe
 
-    possible_alphas = np.linspace(-alpha_max, alpha_max, num_roi_angle_points * 5)
-    # possible_x_lens2, possible_y_lens2 = x_y_from_alpha(possible_alphas)
-
-    x_lens2 = [None] * num_roi_angle_points
-    y_lens2 = [None] * num_roi_angle_points
+    x_lens2 = np.zeros(x_lens.shape)
+    y_lens2 = np.zeros(y_lens.shape)
 
     x = [None] * num_roi_angle_points
     y = [None] * num_roi_angle_points
+
     for ray_idx in range(num_roi_angle_points):
-        x[ray_idx] = np.linspace(x_pipe[ray_idx] - 0.06, x_pipe[ray_idx] + 0.06, num_roi_angle_points * 5)
+        x[ray_idx] = np.linspace(x_pipe[ray_idx] - 0.05, x_pipe[ray_idx] + 0.05, num_roi_angle_points)
+        
+        # Utiliza várias coordenadas x (linspace) para encontrar vários valores da reta "de reflexão"
         y[ray_idx] = a_line2[ray_idx] * x[ray_idx] + b_line2[ray_idx]
 
-        y_l = a_line2[ray_idx] * x_lens[ray_idx] + b_line2[ray_idx]
+        x_intersect, y_intersect = find_line_curve_intersection(x[ray_idx], y[ray_idx], possible_x_lens2, possible_y_lens2)
 
-        matching_indices = np.where(np.isclose(y_l, y[ray_idx], atol=1e-4))[0]
+        # if np.isclose(xc, -0.0153):
+        #     plot_diamond()
+        #     plt.plot(x[ray_idx], y[ray_idx], markersize=1, linewidth=1, color='red')
+        #     if x_intersect is not None and y_intersect is not None:
+        #         plt.plot([x_intersect], [y_intersect], 'sk')
+        #     plt.plot(
+        #         [xc, x_lens[ray_idx], x_pipe[ray_idx]],
+        #         [yc, y_lens[ray_idx], y_pipe[ray_idx]],
+        #         "C2",
+        #         alpha=0.3,
+        #     )
+        #     plt.show()
 
-        if len(matching_indices) > 0:
-            idx = matching_indices[0]
-            x_lens2.append(x[ray_idx][idx])
-            y_lens2.append(y[ray_idx][idx])
-    
-        # plot_diamond()
-        # plt.plot(x[ray_idx], y[ray_idx], 'o', markersize=1, linewidth=0, color='red')
-        # plt.plot([x[ray_idx][idx]], [y[ray_idx][idx]], 'sk')
-        # plt.plot(
-        #     [xc, x_lens[ray_idx], x_pipe[ray_idx]],
-        #     [yc, y_lens[ray_idx], y_pipe[ray_idx]],
-        #     "C2",
-        #     alpha=0.3,
-        # )
-        # plt.show()
+        x_lens2[ray_idx] = x_intersect
+        y_lens2[ray_idx] = y_intersect
 
-    x_lens2 = np.asarray(x_lens2)
-    y_lens2 = np.asarray(y_lens2)
-
-    # ====================
-    # === FIM REFLEXÃO ===
-    # ====================
-
-    # Second refraction (c_water -> c_pipe)
-    # gamma3 = snell(gamma2, dxdy_pipe, c_water, c_pipe)
+    # ======================
+    # === END REFLECTION ===
+    # ======================
 
     a3_line = np.tan(gamma3)
     b3_line = y_pipe - a3_line * x_pipe
@@ -313,7 +496,7 @@ def newton(xc, yc, xf, yf, alpha_initial_guess=None, iter=6):
     """
 
     if alpha_initial_guess is None:
-        alpha_initial_guess = np.arctan(xf / yf)
+        alpha_initial_guess = np.arctan2(xf, yf)
 
     maxdist = []
     mindist = []
@@ -386,7 +569,7 @@ def newton_batch(xc, yc, xf, yf, iter=6):
         i_plus = transducer_center + i
 
 		# Newton-Raphson method for i_plus
-        alpha_initial_guess_plus = np.arctan(results[i_plus - 1]["x_lens"] / results[i_plus - 1]["y_lens"])
+        alpha_initial_guess_plus = np.arctan2(results[i_plus - 1]["x_lens"], results[i_plus - 1]["y_lens"])
         results[i_plus] = newton(
             xc=xc[i_plus],
             yc=yc[i_plus],
@@ -401,7 +584,7 @@ def newton_batch(xc, yc, xf, yf, iter=6):
             print(f"Bad indices found at {i_plus}: {num_bad_indices}")
 
 		# Newton-Raphson method for i_minus
-        alpha_initial_guess_minus = np.arctan(results[i_minus + 1]["x_lens"] / results[i_minus + 1]["y_lens"])
+        alpha_initial_guess_minus = np.arctan2(results[i_minus + 1]["x_lens"], results[i_minus + 1]["y_lens"])
         results[i_minus] = newton(
             xc=xc[i_minus],
             yc=yc[i_minus],
