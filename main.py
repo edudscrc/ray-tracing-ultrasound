@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import time
-import copy
 
 # Speeds of sound
 c_lens = 6400
@@ -26,7 +25,7 @@ roi_angle_max = alpha_max * 0.9
 roi_radius_max = radius_pipe
 roi_radius_min = radius_pipe - 0.02
 
-num_roi_angle_points = 181 * 5
+num_roi_angle_points = 181
 
 
 def roots_bhaskara(a, b, c):
@@ -198,55 +197,46 @@ def distalpha(xc, yc, xf, yf, alpha_lens):
     gamma3 = reflect(gamma2, dxdy_pipe)
 
     a_line2 = np.tan(gamma3)
-    a_line2 *= -1
     b_line2 = y_pipe - a_line2 * x_pipe
 
-    # possible_alphas = np.linspace(-alpha_max, alpha_max, num_roi_angle_points)
-    # z, _ = z_r_from_alpha(possible_alphas)
-    # x_lens2 = (-b_line2 + z * (np.sin(possible_alphas) + np.cos(possible_alphas))) / (a_line2 + 1)
-    # y_lens2 = a_line2 * x_lens2 + b_line2
-    # plot_diamond()
-    # plt.plot(
-    #     [xc, x_lens[0], x_pipe[0], x_lens2[0]],
-    #     [yc, y_lens[0], y_pipe[0], y_lens2[0]],
-    #     "C2",
-    #     alpha=0.3,
-    # )
-    # plt.show()
+    possible_alphas = np.linspace(-alpha_max, alpha_max, num_roi_angle_points * 5)
+    # possible_x_lens2, possible_y_lens2 = x_y_from_alpha(possible_alphas)
 
-    possible_alphas = np.linspace(-alpha_max, alpha_max, num_roi_angle_points)
-    possible_x_lens2, possible_y_lens2 = x_y_from_alpha(possible_alphas)
+    x_lens2 = [None] * num_roi_angle_points
+    y_lens2 = [None] * num_roi_angle_points
 
     x = [None] * num_roi_angle_points
     y = [None] * num_roi_angle_points
     for ray_idx in range(num_roi_angle_points):
-        x[ray_idx] = np.linspace(x_pipe[ray_idx] - 0.06, x_pipe[ray_idx] + 0.06, num_roi_angle_points)
+        x[ray_idx] = np.linspace(x_pipe[ray_idx] - 0.06, x_pipe[ray_idx] + 0.06, num_roi_angle_points * 5)
         y[ray_idx] = a_line2[ray_idx] * x[ray_idx] + b_line2[ray_idx]
 
-        plot_diamond()
-        plt.axvline(x_pipe[ray_idx])
-        plt.plot(x[ray_idx], y[ray_idx], 'o', markersize=1, linewidth=0, color='red')
-        plt.plot(
-            [xc, x_lens[ray_idx], x_pipe[ray_idx]],
-            [yc, y_lens[ray_idx], y_pipe[ray_idx]],
-            "C2",
-            alpha=0.3,
-        )
-        plt.show()
+        y_l = a_line2[ray_idx] * x_lens[ray_idx] + b_line2[ray_idx]
+
+        matching_indices = np.where(np.isclose(y_l, y[ray_idx], atol=1e-4))[0]
+
+        if len(matching_indices) > 0:
+            idx = matching_indices[0]
+            x_lens2.append(x[ray_idx][idx])
+            y_lens2.append(y[ray_idx][idx])
+    
+        # plot_diamond()
+        # plt.plot(x[ray_idx], y[ray_idx], 'o', markersize=1, linewidth=0, color='red')
+        # plt.plot([x[ray_idx][idx]], [y[ray_idx][idx]], 'sk')
+        # plt.plot(
+        #     [xc, x_lens[ray_idx], x_pipe[ray_idx]],
+        #     [yc, y_lens[ray_idx], y_pipe[ray_idx]],
+        #     "C2",
+        #     alpha=0.3,
+        # )
+        # plt.show()
+
+    x_lens2 = np.asarray(x_lens2)
+    y_lens2 = np.asarray(y_lens2)
 
     # ====================
     # === FIM REFLEXÃO ===
     # ====================
-
-    # t = r0 / c_lens + z0 / c_water
-    # a = c_lens**2 / c_water**2 - 1
-    # c = c_lens**2 * t**2 - d0**2
-    # phi2 = -2 * t * c_lens**2 / c_water
-    # phi3 = 2 * d0
-    # b = phi2 + phi3 * np.cos(possible_alphas)
-    # z = roots_bhaskara(a, b, c)[1]
-    # y_lens2 = z * np.cos(possible_alphas)
-    # x_lens2 = z * np.sin(possible_alphas)
 
     # Second refraction (c_water -> c_pipe)
     # gamma3 = snell(gamma2, dxdy_pipe, c_water, c_pipe)
