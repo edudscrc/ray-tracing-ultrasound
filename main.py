@@ -26,6 +26,8 @@ roi_angle_max = alpha_max * 0.9
 roi_radius_max = radius_pipe
 roi_radius_min = radius_pipe - 0.02
 
+num_roi_angle_points = 181 * 5
+
 
 def roots_bhaskara(a, b, c):
     """Computes the roots of the polynomial ax^2 + bx + c = 0"""
@@ -136,7 +138,6 @@ def reflect(gamma1, dydx):
     normal = slope + np.pi / 2
     theta1 = gamma1 - normal
     theta2 = -theta1
-    # gamma2 = slope + np.pi / 2 + theta2
     gamma2 = slope - np.pi / 2 + theta2
 
     return gamma2
@@ -190,23 +191,62 @@ def distalpha(xc, yc, xf, yf, alpha_lens):
     y_pipe = y_pipe1 * upper + y_pipe2 * (1 - upper)
     dxdy_pipe = dxdy_tube(x_pipe, radius_pipe)
 
+    # ================
+    # === REFLEXÃO ===
+    # ================
+
     gamma3 = reflect(gamma2, dxdy_pipe)
 
     a_line2 = np.tan(gamma3)
+    a_line2 *= -1
     b_line2 = y_pipe - a_line2 * x_pipe
 
-    possible_alphas = np.linspace(-alpha_max, alpha_max, 181)
+    # possible_alphas = np.linspace(-alpha_max, alpha_max, num_roi_angle_points)
+    # z, _ = z_r_from_alpha(possible_alphas)
+    # x_lens2 = (-b_line2 + z * (np.sin(possible_alphas) + np.cos(possible_alphas))) / (a_line2 + 1)
+    # y_lens2 = a_line2 * x_lens2 + b_line2
+    # plot_diamond()
+    # plt.plot(
+    #     [xc, x_lens[0], x_pipe[0], x_lens2[0]],
+    #     [yc, y_lens[0], y_pipe[0], y_lens2[0]],
+    #     "C2",
+    #     alpha=0.3,
+    # )
+    # plt.show()
 
-    t = r0 / c_lens + z0 / c_water
-    a = c_lens**2 / c_water**2 - 1
-    c = c_lens**2 * t**2 - d0**2
-    phi2 = -2 * t * c_lens**2 / c_water
-    phi3 = 2 * d0
-    b = phi2 + phi3 * np.cos(possible_alphas)
-    z = roots_bhaskara(a, b, c)[1]
-    y_lens2 = z * np.cos(possible_alphas)
-    x_lens2 = z * np.sin(possible_alphas)
+    possible_alphas = np.linspace(-alpha_max, alpha_max, num_roi_angle_points)
+    possible_x_lens2, possible_y_lens2 = x_y_from_alpha(possible_alphas)
 
+    x = [None] * num_roi_angle_points
+    y = [None] * num_roi_angle_points
+    for ray_idx in range(num_roi_angle_points):
+        x[ray_idx] = np.linspace(x_pipe[ray_idx] - 0.06, x_pipe[ray_idx] + 0.06, num_roi_angle_points)
+        y[ray_idx] = a_line2[ray_idx] * x[ray_idx] + b_line2[ray_idx]
+
+        plot_diamond()
+        plt.axvline(x_pipe[ray_idx])
+        plt.plot(x[ray_idx], y[ray_idx], 'o', markersize=1, linewidth=0, color='red')
+        plt.plot(
+            [xc, x_lens[ray_idx], x_pipe[ray_idx]],
+            [yc, y_lens[ray_idx], y_pipe[ray_idx]],
+            "C2",
+            alpha=0.3,
+        )
+        plt.show()
+
+    # ====================
+    # === FIM REFLEXÃO ===
+    # ====================
+
+    # t = r0 / c_lens + z0 / c_water
+    # a = c_lens**2 / c_water**2 - 1
+    # c = c_lens**2 * t**2 - d0**2
+    # phi2 = -2 * t * c_lens**2 / c_water
+    # phi3 = 2 * d0
+    # b = phi2 + phi3 * np.cos(possible_alphas)
+    # z = roots_bhaskara(a, b, c)[1]
+    # y_lens2 = z * np.cos(possible_alphas)
+    # x_lens2 = z * np.sin(possible_alphas)
 
     # Second refraction (c_water -> c_pipe)
     # gamma3 = snell(gamma2, dxdy_pipe, c_water, c_pipe)
@@ -393,11 +433,11 @@ def newton_batch(xc, yc, xf, yf, iter=6):
 def plot_diamond():
     """Plots the main features of the setup."""
 
-    num_alpha_points = 101
+    num_alpha_points = num_roi_angle_points
     alpha = np.linspace(-alpha_max, alpha_max, num_alpha_points)
     x_lens, y_lens = x_y_from_alpha(alpha)
 
-    num_alpha_pipe_points = 201
+    num_alpha_pipe_points = num_roi_angle_points
     alpha_pipe = np.linspace(-np.pi / 2, np.pi / 2, num_alpha_pipe_points)
     x_pipe = radius_pipe * np.sin(alpha_pipe)
     y_pipe = radius_pipe * np.cos(alpha_pipe)
@@ -415,15 +455,14 @@ def dist(x1, y1, x2, y2):
 
 
 if __name__ == "__main__":
-    plot_diamond()
-    plt.show()
+    # plot_diamond()
+    # plt.show()
 
     # 'xc' and 'yc' are arrays of the positions (x, y) of each transducer's element
     xc = np.arange(num_elements) * pitch
     xc = xc - np.mean(xc)
     yc = np.ones_like(xc) * d0
 
-    num_roi_angle_points = 181
     af = np.linspace(-roi_angle_max, roi_angle_max, num_roi_angle_points)
     rf = np.linspace(roi_radius_min, roi_radius_max, 1)
     Af, Rf = np.meshgrid(af, rf)
@@ -439,56 +478,56 @@ if __name__ == "__main__":
     end = time.time()
     print(f"Elapsed time - newton_batch: {end - start} seconds.")
 
-    idx_element = 15
+    # idx_element = 32
 
-    plt.figure()
-    plt.semilogy(results[idx_element]["maxdist"], "o-")
-    plt.semilogy(results[idx_element]["mindist"], "o-")
-    plt.grid()
-    plt.xlabel("iteration")
-    plt.ylabel("Distances")
-    plt.legend(["Max distance", "Min distance"])
-    plt.title(f"Newton algorithm convergence fof element {idx_element}")
-    plt.show()
+    # plt.figure()
+    # plt.semilogy(results[idx_element]["maxdist"], "o-")
+    # plt.semilogy(results[idx_element]["mindist"], "o-")
+    # plt.grid()
+    # plt.xlabel("iteration")
+    # plt.ylabel("Distances")
+    # plt.legend(["Max distance", "Min distance"])
+    # plt.title(f"Newton algorithm convergence fof element {idx_element}")
+    # plt.show()
 
-    tof = dist(
-        xc[idx_element],
-        yc[idx_element],
-        results[idx_element]["x_lens"],
-        results[idx_element]["y_lens"],
-    ) / c_lens
+    # tof = dist(
+    #     xc[idx_element],
+    #     yc[idx_element],
+    #     results[idx_element]["x_lens"],
+    #     results[idx_element]["y_lens"],
+    # ) / c_lens
 
-    tof += dist(
-        results[idx_element]["x_lens"],
-        results[idx_element]["y_lens"],
-        results[idx_element]["x_pipe"],
-        results[idx_element]["y_pipe"],
-    ) / c_water
+    # tof += dist(
+    #     results[idx_element]["x_lens"],
+    #     results[idx_element]["y_lens"],
+    #     results[idx_element]["x_pipe"],
+    #     results[idx_element]["y_pipe"],
+    # ) / c_water
 
-    tof += dist(
-        results[idx_element]["x_pipe"],
-        results[idx_element]["y_pipe"],
-        xf,
-        yf,
-    ) / c_pipe
+    # tof += dist(
+    #     results[idx_element]["x_pipe"],
+    #     results[idx_element]["y_pipe"],
+    #     xf,
+    #     yf,
+    # ) / c_pipe
 
-    tof = tof.reshape((len(rf), len(af)))
+    # tof = tof.reshape((len(rf), len(af)))
     
-    plt.figure()
-    plt.imshow(tof)
-    plt.colorbar()
-    plt.axis("auto")
-    plt.title(f"Times of flight for element {idx_element}")
-    plt.show()
+    # plt.figure()
+    # plt.imshow(tof)
+    # plt.colorbar()
+    # plt.axis("auto")
+    # plt.title(f"Times of flight for element {idx_element}")
+    # plt.show()
 
-    plot_diamond()
-
-    plt.plot(xc, yc, ".k")
-    for i in np.arange(0, len(af), 10):
-        plt.plot(
-            [xc[idx_element], results[idx_element]["x_lens"][i], results[idx_element]["x_pipe"][i], results[idx_element]["x_lens2"][i]],
-            [yc[idx_element], results[idx_element]["y_lens"][i], results[idx_element]["y_pipe"][i], results[idx_element]["y_lens2"][i]],
-            "C2",
-            alpha=0.3,
-        )
-    plt.show()
+    for idx_element in range(0, num_elements):
+        plot_diamond()
+        plt.plot(xc, yc, ".k")
+        for i in np.arange(0, len(af), 5):
+            plt.plot(
+                [xc[idx_element], results[idx_element]["x_lens"][i], results[idx_element]["x_pipe"][i], results[idx_element]["x_lens2"][i]],
+                [yc[idx_element], results[idx_element]["y_lens"][i], results[idx_element]["y_pipe"][i], results[idx_element]["y_lens2"][i]],
+                "C2",
+                alpha=0.3,
+            )
+        plt.show()
