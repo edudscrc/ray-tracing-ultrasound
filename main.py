@@ -11,7 +11,7 @@ c_pipe = 5600
 # Distances 'r' and 'z' for alpha = 0
 r0 = 0.12156646438729327
 z0 = 0.08843353561270673
-d0 = r0 + z0
+d = r0 + z0
 
 # Maximum sectorial angle (radians)
 alpha_max = 50.62033040986099 * (np.pi / 180)
@@ -210,15 +210,15 @@ def z_r_from_alpha(alpha):
 
     t = r0 / c_lens + z0 / c_water
     a = c_lens**2 / c_water**2 - 1
-    c = c_lens**2 * t**2 - d0**2
+    c = c_lens**2 * t**2 - d**2
 
     phi2 = -2 * t * c_lens**2 / c_water
-    phi3 = 2 * d0
+    phi3 = 2 * d
 
     b = phi2 + phi3 * np.cos(alpha)
 
     z = roots_bhaskara(a, b, c)[1]
-    r = np.sqrt(z**2 + d0**2 - 2 * z * d0 * np.cos(alpha))
+    r = np.sqrt(z**2 + d**2 - 2 * z * d * np.cos(alpha))
 
     return z, r
 
@@ -245,11 +245,11 @@ def dydx_from_alpha(alpha):
         # at https://colab.research.google.com/drive/18yOqjGbSTO6MvzSMCYePM5cmVU8Ep0aa?usp=sharing
 
         a = c_lens**2 / c_water**2 - 1
-        c = c_lens**2 * t**2 - d0**2
+        c = c_lens**2 * t**2 - d**2
 
         phi1 = -1 / (2 * a)
         phi2 = -2 * t * c_lens**2 / c_water
-        phi3 = 2 * d0
+        phi3 = 2 * d
 
         b = phi2 + phi3 * np.cos(alpha)
 
@@ -401,41 +401,62 @@ def distalpha(xc, yc, xf, yf, alpha_lens):
     a3_line = np.tan(gamma4)
     b3_line = y_lens2 - a3_line * x_lens2
 
-    
+    yin = np.full(xf.shape, yc)
+    xin = (yin - b3_line) / a3_line
 
-    # a3_line = np.tan(gamma3)
-    # b3_line = y_pipe - a3_line * x_pipe
+    # a4 = -1 / a3_line
+    # b4 = yf - a4 * xf
+    # xin = (b4 - b3_line) / (a3_line - a4)
+    # yin = a3_line * xin + b3_line
 
-    a4 = -1 / a3_line
-    b4 = yf - a4 * xf
-    xin = (b4 - b3_line) / (a3_line - a4)
-    yin = a3_line * xin + b3_line
     dist = (xin - xf) ** 2 + (yin - yf) ** 2
 
     xx = [None] * num_roi_angle_points
     yy = [None] * num_roi_angle_points
 
     for ray_idx in range(num_roi_angle_points):
-        xx[ray_idx] = np.linspace(x_lens2[ray_idx] - 0.05, x_lens2[ray_idx] + 0.05, num_roi_angle_points)
+        xx[ray_idx] = np.linspace(x_lens2[ray_idx], x_lens2[ray_idx] + 0.05 if gamma4[ray_idx] <= 0 else - 0.05, num_roi_angle_points)
         
         yy[ray_idx] = a3_line[ray_idx] * xx[ray_idx] + b3_line[ray_idx]
 
-        plot_diamond()
-        plt.plot(xx[ray_idx], yy[ray_idx], markersize=1, linewidth=1, color='red')
-        plt.plot([xin[ray_idx]], [yin[ray_idx]], "^")
-        plt.plot([xf[ray_idx]], [yf[ray_idx]], ">")
+        # print(y_lens2[ray_idx])
+
+        yy_mask = np.where(yy[ray_idx] > yc + 0.005 , np.full(yy[ray_idx].shape, False), np.full(yy[ray_idx].shape, True))
+        
+        xx[ray_idx] = np.ma.MaskedArray(xx[ray_idx], mask=~yy_mask)
+        yy[ray_idx] = np.ma.MaskedArray(yy[ray_idx], mask=~yy_mask)
+
+        # plot_diamond()
+        # plt.plot(xx[ray_idx], yy[ray_idx], markersize=1, linewidth=1, color='red')
+        # plt.plot([xin[ray_idx]], [yin[ray_idx]], "^")
+        # plt.plot([xf[ray_idx]], [yf[ray_idx]], ">")
+        # plt.plot(
+        #     [xc, x_lens[ray_idx], x_pipe[ray_idx], x_lens2[ray_idx]],
+        #     [yc, y_lens[ray_idx], y_pipe[ray_idx], y_lens2[ray_idx]],
+        #     "C2",
+        #     alpha=0.3,
+        # )
+        # plt.show()
+
+    plot_diamond()
+    # plt.plot(xx, yy, markersize=1, linewidth=1, color='red')
+    # plt.plot([xin], [yin], "^")
+    # plt.plot([xf], [yf], ">")
+    plt.plot([xc], [yc], 'sk')
+    for i in np.arange(0, num_roi_angle_points, 10):
         plt.plot(
-            [xc, x_lens[ray_idx], x_pipe[ray_idx], x_lens2[ray_idx]],
-            [yc, y_lens[ray_idx], y_pipe[ray_idx], y_lens2[ray_idx]],
+            [xc, x_lens[i], x_pipe[i], x_lens2[i], xin[i]],
+            [yc, y_lens[i], y_pipe[i], y_lens2[i], yin[i]],
             "C2",
             alpha=0.3,
         )
-        plt.show()
-
-    # print(f'{xc = }')
-    # print(f'{xin = }')
-    # print(f'{yin = }')
-    # input('>_')
+    # plt.plot(
+    #     [xc, x_lens[ray_idx], x_pipe[ray_idx], x_lens2[ray_idx]],
+    #     [yc, y_lens[ray_idx], y_pipe[ray_idx], y_lens2[ray_idx]],
+    #     "C2",
+    #     alpha=0.3,
+    # )
+    plt.show()
 
     # a4 = -1 / a_line3
     # b4 = yf - a4 * xf
@@ -632,7 +653,7 @@ def plot_diamond():
     plt.plot(x_lens, y_lens, "-k")
     plt.plot(x_pipe, y_pipe, "-C0")
     plt.plot([0], [0], "or")
-    plt.plot([0], [d0], "sk")
+    # plt.plot([0], [d], "sk")
     plt.axis("equal")
 
 
@@ -647,7 +668,7 @@ if __name__ == "__main__":
     # 'xc' and 'yc' are arrays of the positions (x, y) of each transducer's element
     xc = np.arange(num_elements) * pitch
     xc = xc - np.mean(xc)
-    yc = np.ones_like(xc) * d0
+    yc = np.ones_like(xc) * d
 
     # af = np.linspace(-roi_angle_max, roi_angle_max, num_roi_angle_points)
     # rf = np.linspace(roi_radius_min, roi_radius_max, 1)
