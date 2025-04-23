@@ -398,12 +398,19 @@ def distalpha(xc, yc, xf, yf, alpha_lens):
     # Last refraction (c_water -> c_lens)
     gamma4 = snell(gamma3, dy2, dx2, c_water, c_lens)
 
-    # xcf2 = np.arange(num_elements) * pitch
-    # xcf2 = xcf2 - np.mean(xcf2)
-    # ycf2 = np.ones_like(xcf2) * d0
+    a3_line = np.tan(gamma4)
+    b3_line = y_lens2 - a3_line * x_lens2
 
-    a_line3 = np.tan(gamma4)
-    b_line3 = y_lens2 - a_line3 * x_lens2
+    
+
+    # a3_line = np.tan(gamma3)
+    # b3_line = y_pipe - a3_line * x_pipe
+
+    a4 = -1 / a3_line
+    b4 = yf - a4 * xf
+    xin = (b4 - b3_line) / (a3_line - a4)
+    yin = a3_line * xin + b3_line
+    dist = (xin - xf) ** 2 + (yin - yf) ** 2
 
     xx = [None] * num_roi_angle_points
     yy = [None] * num_roi_angle_points
@@ -411,15 +418,12 @@ def distalpha(xc, yc, xf, yf, alpha_lens):
     for ray_idx in range(num_roi_angle_points):
         xx[ray_idx] = np.linspace(x_lens2[ray_idx] - 0.05, x_lens2[ray_idx] + 0.05, num_roi_angle_points)
         
-        # Utiliza várias coordenadas x (linspace) para encontrar vários valores da reta "de reflexão"
-        yy[ray_idx] = a_line3[ray_idx] * xx[ray_idx] + b_line3[ray_idx]
-
-        # x_intersect, y_intersect = find_line_curve_intersection(x[ray_idx], y[ray_idx], possible_x_lens2, possible_y_lens2)
+        yy[ray_idx] = a3_line[ray_idx] * xx[ray_idx] + b3_line[ray_idx]
 
         plot_diamond()
         plt.plot(xx[ray_idx], yy[ray_idx], markersize=1, linewidth=1, color='red')
-        # if x_intersect is not None and y_intersect is not None:
-        #     plt.plot([x_intersect], [y_intersect], 'sk')
+        plt.plot([xin[ray_idx]], [yin[ray_idx]], "^")
+        plt.plot([xf[ray_idx]], [yf[ray_idx]], ">")
         plt.plot(
             [xc, x_lens[ray_idx], x_pipe[ray_idx], x_lens2[ray_idx]],
             [yc, y_lens[ray_idx], y_pipe[ray_idx], y_lens2[ray_idx]],
@@ -428,14 +432,18 @@ def distalpha(xc, yc, xf, yf, alpha_lens):
         )
         plt.show()
 
-        # x_lens2[ray_idx] = x_intersect
-        # y_lens2[ray_idx] = y_intersect
+    # print(f'{xc = }')
+    # print(f'{xin = }')
+    # print(f'{yin = }')
+    # input('>_')
 
-    a4 = -1 / a_line3
-    b4 = yf - a4 * xf
-    xin = (b4 - b_line3) / (a_line3 - a4)
-    yin = a_line3 * xin + b_line3
-    dist = (xin - xf) ** 2 + (yin - yf) ** 2
+    # a4 = -1 / a_line3
+    # b4 = yf - a4 * xf
+    
+    # xin = (b4 - b_line3) / (a_line3 - a4)
+    # yin = a4 * xin + b4
+
+    # dist = (xin - xf) ** 2 + (yin - yf) ** 2
 
     results = {
         "x_lens": x_lens,
@@ -583,7 +591,7 @@ def newton_batch(xc, yc, xf, yf, iter=6):
             alpha_initial_guess=alpha_initial_guess_plus,
             iter=iter
         )
-        bad_indices = results[i_plus]["dist"] > 1e-8
+        bad_indices = results[i_plus]["dist"] > 1e-10
         num_bad_indices = np.count_nonzero(bad_indices)
         if num_bad_indices > 0:
             print(f"Bad indices found at {i_plus}: {num_bad_indices}")
@@ -598,10 +606,10 @@ def newton_batch(xc, yc, xf, yf, iter=6):
             alpha_initial_guess=alpha_initial_guess_minus,
             iter=iter
         )
-        bad_indices = results[i_minus]["dist"] > 1e-8
+        bad_indices = results[i_minus]["dist"] > 1e-10
         num_bad_indices = np.count_nonzero(bad_indices)
         if num_bad_indices > 0:
-            print(f"Bad indices found at {i_plus}: {num_bad_indices}")
+            print(f"Bad indices found at {i_minus}: {num_bad_indices}")
 
         print(f"Computed {i * 2} elements (of {num_elements})")
 
@@ -704,7 +712,7 @@ if __name__ == "__main__":
     for idx_element in range(0, num_elements):
         plot_diamond()
         plt.plot(xc, yc, ".k")
-        for i in np.arange(0, 64, 5):
+        for i in np.arange(0, num_roi_angle_points, 5):
             plt.plot(
                 [xc[idx_element], results[idx_element]["x_lens"][i], results[idx_element]["x_pipe"][i], results[idx_element]["x_lens2"][i], results[idx_element]["xin"][i]],
                 [yc[idx_element], results[idx_element]["y_lens"][i], results[idx_element]["y_pipe"][i], results[idx_element]["y_lens2"][i], results[idx_element]["yin"][i]],
