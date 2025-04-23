@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+import copy
 
 # Speeds of sound
 c_lens = 6400
@@ -25,7 +26,7 @@ roi_angle_max = alpha_max * 0.9
 roi_radius_max = radius_pipe
 roi_radius_min = radius_pipe - 0.02
 
-num_roi_angle_points = 181
+num_roi_angle_points = num_elements
 
 
 def find_line_curve_intersection(x_line, y_line, x_curve, y_curve):
@@ -344,29 +345,9 @@ def distalpha(xc, yc, xf, yf, alpha_lens):
 
     # First refraction (c_lens -> c_water)
     gamma2 = snell(gamma1, dy, dx, c_lens, c_water)
-    
-    # gamma2 = reflect(gamma1, dy, dx)
 
     a_line = np.tan(gamma2)
     b_line = y_lens - a_line * x_lens
-
-    # x = [None] * num_roi_angle_points
-    # y = [None] * num_roi_angle_points
-    # for ray_idx in range(num_roi_angle_points):
-    #     x[ray_idx] = np.linspace(x_lens[ray_idx] - 0.06, y_lens[ray_idx] + 0.06, num_roi_angle_points)
-        
-    #     # Utiliza várias coordenadas x (linspace) para encontrar vários valores da reta "de reflexão"
-    #     y[ray_idx] = a_line[ray_idx] * x[ray_idx] + b_line[ray_idx]
-
-    #     plot_diamond()
-    #     plt.plot(x[ray_idx], y[ray_idx], markersize=1, linewidth=1, color='red')
-    #     plt.plot(
-    #         [xc, x_lens[ray_idx]],
-    #         [yc, y_lens[ray_idx]],
-    #         "C2",
-    #         alpha=0.3,
-    #     )
-    #     plt.show()
 
     a = a_line**2 + 1
     b = 2 * a_line * b_line
@@ -377,7 +358,7 @@ def distalpha(xc, yc, xf, yf, alpha_lens):
     x_pipe = np.where(y_pipe1 > y_pipe2, x_pipe1, x_pipe2)
     y_pipe = np.where(y_pipe1 > y_pipe2, y_pipe1, y_pipe2)
     dx_pipe, dy_pipe = dxdy_tube(x_pipe, radius_pipe)
-
+ 
     # ==================
     # === REFLECTION ===
     # ==================
@@ -404,19 +385,6 @@ def distalpha(xc, yc, xf, yf, alpha_lens):
 
         x_intersect, y_intersect = find_line_curve_intersection(x[ray_idx], y[ray_idx], possible_x_lens2, possible_y_lens2)
 
-        # if np.isclose(xc, -0.0153):
-        #     plot_diamond()
-        #     plt.plot(x[ray_idx], y[ray_idx], markersize=1, linewidth=1, color='red')
-        #     if x_intersect is not None and y_intersect is not None:
-        #         plt.plot([x_intersect], [y_intersect], 'sk')
-        #     plt.plot(
-        #         [xc, x_lens[ray_idx], x_pipe[ray_idx]],
-        #         [yc, y_lens[ray_idx], y_pipe[ray_idx]],
-        #         "C2",
-        #         alpha=0.3,
-        #     )
-        #     plt.show()
-
         x_lens2[ray_idx] = x_intersect
         y_lens2[ray_idx] = y_intersect
 
@@ -424,12 +392,49 @@ def distalpha(xc, yc, xf, yf, alpha_lens):
     # === END REFLECTION ===
     # ======================
 
-    a3_line = np.tan(gamma3)
-    b3_line = y_pipe - a3_line * x_pipe
-    a4 = -1 / a3_line
+    alpha_lens2 = np.arctan2(x_lens2, y_lens2)
+    dy2, dx2 = dydx_from_alpha(alpha_lens2)
+
+    # Last refraction (c_water -> c_lens)
+    gamma4 = snell(gamma3, dy2, dx2, c_water, c_lens)
+
+    # xcf2 = np.arange(num_elements) * pitch
+    # xcf2 = xcf2 - np.mean(xcf2)
+    # ycf2 = np.ones_like(xcf2) * d0
+
+    a_line3 = np.tan(gamma4)
+    b_line3 = y_lens2 - a_line3 * x_lens2
+
+    xx = [None] * num_roi_angle_points
+    yy = [None] * num_roi_angle_points
+
+    for ray_idx in range(num_roi_angle_points):
+        xx[ray_idx] = np.linspace(x_lens2[ray_idx] - 0.05, x_lens2[ray_idx] + 0.05, num_roi_angle_points)
+        
+        # Utiliza várias coordenadas x (linspace) para encontrar vários valores da reta "de reflexão"
+        yy[ray_idx] = a_line3[ray_idx] * xx[ray_idx] + b_line3[ray_idx]
+
+        # x_intersect, y_intersect = find_line_curve_intersection(x[ray_idx], y[ray_idx], possible_x_lens2, possible_y_lens2)
+
+        plot_diamond()
+        plt.plot(xx[ray_idx], yy[ray_idx], markersize=1, linewidth=1, color='red')
+        # if x_intersect is not None and y_intersect is not None:
+        #     plt.plot([x_intersect], [y_intersect], 'sk')
+        plt.plot(
+            [xc, x_lens[ray_idx], x_pipe[ray_idx], x_lens2[ray_idx]],
+            [yc, y_lens[ray_idx], y_pipe[ray_idx], y_lens2[ray_idx]],
+            "C2",
+            alpha=0.3,
+        )
+        plt.show()
+
+        # x_lens2[ray_idx] = x_intersect
+        # y_lens2[ray_idx] = y_intersect
+
+    a4 = -1 / a_line3
     b4 = yf - a4 * xf
-    xin = (b4 - b3_line) / (a3_line - a4)
-    yin = a3_line * xin + b3_line
+    xin = (b4 - b_line3) / (a_line3 - a4)
+    yin = a_line3 * xin + b_line3
     dist = (xin - xf) ** 2 + (yin - yf) ** 2
 
     results = {
@@ -636,15 +641,18 @@ if __name__ == "__main__":
     xc = xc - np.mean(xc)
     yc = np.ones_like(xc) * d0
 
-    af = np.linspace(-roi_angle_max, roi_angle_max, num_roi_angle_points)
-    rf = np.linspace(roi_radius_min, roi_radius_max, 1)
-    Af, Rf = np.meshgrid(af, rf)
-    Af = Af.flatten()
-    Rf = Rf.flatten()
+    # af = np.linspace(-roi_angle_max, roi_angle_max, num_roi_angle_points)
+    # rf = np.linspace(roi_radius_min, roi_radius_max, 1)
+    # Af, Rf = np.meshgrid(af, rf)
+    # Af = Af.flatten()
+    # Rf = Rf.flatten()
 
-    # 'xf' and 'yf' are arrays of the positions (x, y) of each target (the suffix 'f' means fire)
-    xf = Rf * np.sin(Af)
-    yf = Rf * np.cos(Af)
+    # # 'xf' and 'yf' are arrays of the positions (x, y) of each target (the suffix 'f' means fire)
+    # xf = Rf * np.sin(Af)
+    # yf = Rf * np.cos(Af)
+
+    xf = copy.deepcopy(xc)
+    yf = copy.deepcopy(yc)
 
     start = time.time()
     results = newton_batch(xc, yc, xf, yf, iter=20)
@@ -696,10 +704,10 @@ if __name__ == "__main__":
     for idx_element in range(0, num_elements):
         plot_diamond()
         plt.plot(xc, yc, ".k")
-        for i in np.arange(0, len(af), 5):
+        for i in np.arange(0, 64, 5):
             plt.plot(
-                [xc[idx_element], results[idx_element]["x_lens"][i], results[idx_element]["x_pipe"][i], results[idx_element]["x_lens2"][i]],
-                [yc[idx_element], results[idx_element]["y_lens"][i], results[idx_element]["y_pipe"][i], results[idx_element]["y_lens2"][i]],
+                [xc[idx_element], results[idx_element]["x_lens"][i], results[idx_element]["x_pipe"][i], results[idx_element]["x_lens2"][i], results[idx_element]["xin"][i]],
+                [yc[idx_element], results[idx_element]["y_lens"][i], results[idx_element]["y_pipe"][i], results[idx_element]["y_lens2"][i], results[idx_element]["yin"][i]],
                 "C2",
                 alpha=0.3,
             )
