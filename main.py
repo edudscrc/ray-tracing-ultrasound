@@ -409,22 +409,46 @@ def distalpha(xc, yc, xf, yf, alpha_lens):
     # xin = (b4 - b3_line) / (a3_line - a4)
     # yin = a3_line * xin + b3_line
 
-    dist = (xin - xf) ** 2 + (yin - yf) ** 2
+    xf2 = np.arange(num_elements) * pitch
+    xf2 = xf2 - np.mean(xf2)
+    yf2 = np.ones_like(xf2) * d
 
-    xx = [None] * num_roi_angle_points
-    yy = [None] * num_roi_angle_points
+    # condition = (xf2 > (xc + (pitch * 5))) | (xf2 < (xc - (pitch * 5)))
+    # print(condition)
+    # input('>_')
 
-    for ray_idx in range(num_roi_angle_points):
-        xx[ray_idx] = np.linspace(x_lens2[ray_idx], x_lens2[ray_idx] + 0.05 if gamma4[ray_idx] <= 0 else - 0.05, num_roi_angle_points)
+    mask = np.where((xf2 > (xc + (pitch * 5))) | (xf2 < (xc - (pitch * 5))), False, True)
+    xf2[~mask] = -99
+    yf2[~mask] = -99
+    # xf2 = np.ma.MaskedArray(xf2, mask=~mask)
+    # yf2 = np.ma.MaskedArray(yf2, mask=~mask)
+
+    # print(xf2)
+    # input('>_')
+
+    dist = (xin - xf2) ** 2 + (yin - yf2) ** 2
+
+    # Reshape to allow broadcasting
+    # xin_reshaped = xin.reshape(xin.size, 1)  # Column vector
+    # yin_reshaped = yin.reshape(yin.size, 1)  # Column vector
+
+    # Calculate distances using broadcasting
+    # dist = (xin_reshaped - xf2) ** 2 + (yin_reshaped - yf2) ** 2
+
+    # xx = [None] * num_roi_angle_points
+    # yy = [None] * num_roi_angle_points
+
+    # for ray_idx in range(num_roi_angle_points):
+    #     xx[ray_idx] = np.linspace(x_lens2[ray_idx], x_lens2[ray_idx] + 0.05 if gamma4[ray_idx] <= 0 else - 0.05, num_roi_angle_points)
         
-        yy[ray_idx] = a3_line[ray_idx] * xx[ray_idx] + b3_line[ray_idx]
+    #     yy[ray_idx] = a3_line[ray_idx] * xx[ray_idx] + b3_line[ray_idx]
 
-        # print(y_lens2[ray_idx])
+    #     # print(y_lens2[ray_idx])
 
-        yy_mask = np.where(yy[ray_idx] > yc + 0.005 , np.full(yy[ray_idx].shape, False), np.full(yy[ray_idx].shape, True))
+    #     yy_mask = np.where(yy[ray_idx] > yc + 0.005 , np.full(yy[ray_idx].shape, False), np.full(yy[ray_idx].shape, True))
         
-        xx[ray_idx] = np.ma.MaskedArray(xx[ray_idx], mask=~yy_mask)
-        yy[ray_idx] = np.ma.MaskedArray(yy[ray_idx], mask=~yy_mask)
+    #     xx[ray_idx] = np.ma.MaskedArray(xx[ray_idx], mask=~yy_mask)
+    #     yy[ray_idx] = np.ma.MaskedArray(yy[ray_idx], mask=~yy_mask)
 
         # plot_diamond()
         # plt.plot(xx[ray_idx], yy[ray_idx], markersize=1, linewidth=1, color='red')
@@ -438,25 +462,25 @@ def distalpha(xc, yc, xf, yf, alpha_lens):
         # )
         # plt.show()
 
-    plot_diamond()
+    # plot_diamond()
     # plt.plot(xx, yy, markersize=1, linewidth=1, color='red')
     # plt.plot([xin], [yin], "^")
     # plt.plot([xf], [yf], ">")
-    plt.plot([xc], [yc], 'sk')
-    for i in np.arange(0, num_roi_angle_points, 10):
-        plt.plot(
-            [xc, x_lens[i], x_pipe[i], x_lens2[i], xin[i]],
-            [yc, y_lens[i], y_pipe[i], y_lens2[i], yin[i]],
-            "C2",
-            alpha=0.3,
-        )
+    # plt.plot([xc], [yc], 'sk')
+    # for i in np.arange(0, num_roi_angle_points, 10):
+    #     plt.plot(
+    #         [xc, x_lens[i], x_pipe[i], x_lens2[i], xin[i]],
+    #         [yc, y_lens[i], y_pipe[i], y_lens2[i], yin[i]],
+    #         "C2",
+    #         alpha=0.3,
+    #     )
     # plt.plot(
     #     [xc, x_lens[ray_idx], x_pipe[ray_idx], x_lens2[ray_idx]],
     #     [yc, y_lens[ray_idx], y_pipe[ray_idx], y_lens2[ray_idx]],
     #     "C2",
     #     alpha=0.3,
     # )
-    plt.show()
+    # plt.show()
 
     # a4 = -1 / a_line3
     # b4 = yf - a4 * xf
@@ -688,47 +712,47 @@ if __name__ == "__main__":
     end = time.time()
     print(f"Elapsed time - newton_batch: {end - start} seconds.")
 
-    # idx_element = 32
+    idx_element = 32
 
-    # plt.figure()
-    # plt.semilogy(results[idx_element]["maxdist"], "o-")
-    # plt.semilogy(results[idx_element]["mindist"], "o-")
-    # plt.grid()
-    # plt.xlabel("iteration")
-    # plt.ylabel("Distances")
-    # plt.legend(["Max distance", "Min distance"])
-    # plt.title(f"Newton algorithm convergence fof element {idx_element}")
-    # plt.show()
+    plt.figure()
+    plt.semilogy(results[idx_element]["maxdist"], "o-")
+    plt.semilogy(results[idx_element]["mindist"], "o-")
+    plt.grid()
+    plt.xlabel("iteration")
+    plt.ylabel("Distances")
+    plt.legend(["Max distance", "Min distance"])
+    plt.title(f"Newton algorithm convergence fof element {idx_element}")
+    plt.show()
 
-    # tof = dist(
-    #     xc[idx_element],
-    #     yc[idx_element],
-    #     results[idx_element]["x_lens"],
-    #     results[idx_element]["y_lens"],
-    # ) / c_lens
+    tof = dist(
+        xc[idx_element],
+        yc[idx_element],
+        results[idx_element]["x_lens"],
+        results[idx_element]["y_lens"],
+    ) / c_lens
 
-    # tof += dist(
-    #     results[idx_element]["x_lens"],
-    #     results[idx_element]["y_lens"],
-    #     results[idx_element]["x_pipe"],
-    #     results[idx_element]["y_pipe"],
-    # ) / c_water
+    tof += dist(
+        results[idx_element]["x_lens"],
+        results[idx_element]["y_lens"],
+        results[idx_element]["x_pipe"],
+        results[idx_element]["y_pipe"],
+    ) / c_water
 
-    # tof += dist(
-    #     results[idx_element]["x_pipe"],
-    #     results[idx_element]["y_pipe"],
-    #     xf,
-    #     yf,
-    # ) / c_pipe
+    tof += dist(
+        results[idx_element]["x_pipe"],
+        results[idx_element]["y_pipe"],
+        xf,
+        yf,
+    ) / c_pipe
 
-    # tof = tof.reshape((len(rf), len(af)))
+    tof = tof.reshape((len(rf), len(af)))
     
-    # plt.figure()
-    # plt.imshow(tof)
-    # plt.colorbar()
-    # plt.axis("auto")
-    # plt.title(f"Times of flight for element {idx_element}")
-    # plt.show()
+    plt.figure()
+    plt.imshow(tof)
+    plt.colorbar()
+    plt.axis("auto")
+    plt.title(f"Times of flight for element {idx_element}")
+    plt.show()
 
     for idx_element in range(0, num_elements):
         plot_diamond()
