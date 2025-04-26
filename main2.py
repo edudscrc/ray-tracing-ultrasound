@@ -144,6 +144,11 @@ def plot_setup(show=True):
 #     return refraction_phi
 
 
+def normalize_angle(angle_rad):
+    """Normalize an angle in radians to the range (-pi, pi]"""
+    return np.arctan2(np.sin(angle_rad), np.cos(angle_rad))
+
+
 def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     x_p, z_p = x_z_from_alpha(alpha)
 
@@ -154,9 +159,12 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     d_zh, d_xh = dz_dx_from_alpha(alpha)
     phi_h = np.arctan2(d_zh, d_xh)
     phi_1 = phi_ap - (phi_h + np.pi / 2)
+    phi_1 = normalize_angle(phi_1)
     phi_2 = np.arcsin((c2 / c1) * np.sin(phi_1))
+    phi_2 = normalize_angle(phi_2)
     # phi_pq = phi_h + (np.pi / 2) - phi_2  # igual ao artigo
     phi_pq = phi_h - (np.pi / 2) + phi_2
+    phi_pq = normalize_angle(phi_pq)
 
     a_pq = np.tan(phi_pq)
     b_pq = z_p - a_pq * x_p
@@ -176,10 +184,14 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     # Second refraction (Snell's Law)
     slope_zc_x = dzdx_pipe(x_q, r_outer)
     phi_c = np.arctan(slope_zc_x)  # TODO: check if the angle's signal is correct
+    phi_c = normalize_angle(phi_c)
     phi_3 = phi_pq - (phi_c + np.pi / 2)
+    phi_3 = normalize_angle(phi_3)
     phi_4 = np.arcsin((c3 / c2) * np.sin(phi_3))
+    phi_4 = normalize_angle(phi_4)
     # phi_l = phi_c + np.pi / 2 - phi_4  # Equation B.21 in Appendix B. (Wrong in the article!)
     phi_l = phi_c - np.pi / 2 + phi_4
+    phi_l = normalize_angle(phi_l)
 
     a_l = np.tan(phi_l)
     b_l = z_q - a_l * x_q
