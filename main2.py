@@ -84,13 +84,13 @@ def dz_dx_from_alpha(alpha):
     h = h_from_alpha(alpha)
     dh_dAlpha = dh_from_alpha(alpha)
 
-    # Google Colab (pode ser simplificado)
+    # Código como está no Google Colab. Pode ser simplificado pelas equações (A.19a) e (A.19b) do artigo.
     # alpha_ = (np.pi / 2) - alpha
     # dh_dAlpha = -dh_dAlpha
     # dz_dAlpha = dh_dAlpha * np.sin(alpha_) + h * np.cos(alpha_)
     # dx_dAlpha = dh_dAlpha * np.cos(alpha_) - h * np.sin(alpha_)
 
-    # Igual ao artigo
+    # Equations (A.19a) and (A.19b) in Appendix A.2.2.
     dz_dAlpha = dh_dAlpha * np.cos(alpha) - h * np.sin(alpha)
     dx_dAlpha = dh_dAlpha * np.sin(alpha) + h * np.cos(alpha)
 
@@ -129,21 +129,6 @@ def plot_setup(show=True):
 #     return np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
 
 
-# def snell(incidence_inclination, dz, dx, c1, c2):
-#     """
-#     slope_inclination : inclination of the 'divisor' between the two mediums.
-#     theta_1 : angle of incidence.
-#     theta_2 : refraction angle.
-#     refraction_phi : inclination of the refracted segment.
-#     """
-
-#     slope_inclination = np.arctan2(dz, dx)
-#     theta_1 = incidence_inclination - slope_inclination - (np.pi / 2)
-#     theta_2 = np.arcsin((c2 / c1) * np.sin(theta_1))
-#     refraction_phi = slope_inclination + (np.pi / 2) - theta_2
-#     return refraction_phi
-
-
 def rhp(x):
     '''Projects an angle to the Right Half Plane [-pi/2; pi/2]'''
     x = np.mod(x, np.pi)
@@ -162,85 +147,83 @@ def uhp(x):
 def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     x_p, z_p = x_z_from_alpha(alpha)
 
-    phi_ap = np.arctan2(z_a - z_p, x_a - x_p)  # igual ao artigo
-    # Código no colab (pode ser simplificado):
-    # phi_ap = np.arctan2(z_p - z_a, x_p - x_a)
-    # phi_ap = phi_ap + (phi_ap < 0) * np.pi
+    # Equation (B.2) in Appendix B.
+    phi_ap = np.arctan2(z_a - z_p, x_a - x_p)
 
-    # First refraction (Snell's Law)
+    # Refraction (c1 -> c2)
     d_zh, d_xh = dz_dx_from_alpha(alpha)
     phi_h = np.arctan2(d_zh, d_xh)
-
-    normal_angle_first = phi_h + np.pi / 2
-    normal_dx_first = np.cos(normal_angle_first)
-    normal_dz_first = np.sin(normal_angle_first)
-
     phi_1 = phi_ap - (phi_h + np.pi / 2)
     phi_2 = np.arcsin((c2 / c1) * np.sin(phi_1))
-    # phi_pq = phi_h + (np.pi / 2) - phi_2  # igual ao artigo
+    # phi_pq = phi_h + (np.pi / 2) - phi_2  # Equation (B.5) in Appendix B.
+    # The equation (B.5) above produces incorrect result. The one below produces correct result.
     phi_pq = phi_h - (np.pi / 2) + phi_2
 
-    # phi_pq = uhp(phi_pq)  # isso muda tudo
+    # Line equation
     a_pq = np.tan(phi_pq)
     b_pq = z_p - a_pq * x_p
 
     A = np.square(a_pq) + 1
+    # Equation (B.11b) in Appendix B. The article is missing the "2".
     B = 2 * a_pq * b_pq
     C = np.square(b_pq) - np.square(r_outer)
 
     x_q1, x_q2 = roots_bhaskara(A, B, C)
     z_q1 = a_pq * x_q1 + b_pq
     z_q2 = a_pq * x_q2 + b_pq
-
     mask_upper = z_q1 > z_q2
     x_q = np.where(mask_upper, x_q1, x_q2)
     z_q = np.where(mask_upper, z_q1, z_q2)
 
-    # Second refraction (Snell's Law)
+    # Refraction (c2 -> c3)
     slope_zc_x = dzdx_pipe(x_q, r_outer)
     phi_c = np.arctan(slope_zc_x)
-    # phi_c = rhp(phi_c)
-
-    normal_angle_second = phi_c + np.pi / 2
-    normal_dx_second = np.cos(normal_angle_second)
-    normal_dz_second = np.sin(normal_angle_second)
-
     phi_3 = phi_pq - (phi_c + np.pi / 2)
     phi_4 = np.arcsin((c3 / c2) * np.sin(phi_3))
-    # phi_l = phi_c + np.pi / 2 - phi_4  # Equation B.21 in Appendix B. (Errado no artigo: phi_4 ao invés de phi_2)
+    # phi_l = phi_c + np.pi / 2 - phi_4  # Equation (B.21) in Appendix B. (Erro de digitação no artigo: phi_4 ao invés de phi_2)
+    # The equation (B.21) above produces incorrect result. The one below produces correct result.
     phi_l = phi_c - np.pi / 2 + phi_4
 
+    # Line equation
     a_l = np.tan(phi_l)
     b_l = z_q - a_l * x_q
 
+    # Closest point to targets (x_f), (z_f)
     a4 = -1 / a_l
     b4 = z_f - a4 * x_f
     x_in = (b4 - b_l) /(a_l - a4)
     z_in = a_l * x_in + b_l
 
-    scale = 0.01
+    # Helpful to plot normal lines
+    normal_line_scale = 0.01
+    normal_angle_1 = phi_h + np.pi / 2
+    normal_dx_1 = np.cos(normal_angle_1)
+    normal_dz_1 = np.sin(normal_angle_1)
+    normal_angle_2 = phi_c + np.pi / 2
+    normal_dx_2 = np.cos(normal_angle_2)
+    normal_dz_2 = np.sin(normal_angle_2)
 
     plot_setup(show=False)
-    for ray in range(0, len(alpha), 5):
+    for ray in range(0, len(alpha), 10):
         plt.plot([x_a, x_p[ray], x_q[ray], x_in[ray]],
                     [z_a, z_p[ray], z_q[ray], z_in[ray]],
                     "C2")
 
-        normal_end_x_pos_first = x_p[ray] + normal_dx_first[ray] * scale
-        normal_end_z_pos_first = z_p[ray] + normal_dz_first[ray] * scale
-        normal_end_x_neg_first = x_p[ray] - normal_dx_first[ray] * scale
-        normal_end_z_neg_first = z_p[ray] - normal_dz_first[ray] * scale
-        plt.plot([normal_end_x_neg_first, normal_end_x_pos_first], 
-                 [normal_end_z_neg_first, normal_end_z_pos_first], 
-                 'r-', linewidth=1)
+        normal_end_x_pos_1 = x_p[ray] + normal_dx_1[ray] * normal_line_scale
+        normal_end_z_pos_1 = z_p[ray] + normal_dz_1[ray] * normal_line_scale
+        normal_end_x_neg_1 = x_p[ray] - normal_dx_1[ray] * normal_line_scale
+        normal_end_z_neg_1 = z_p[ray] - normal_dz_1[ray] * normal_line_scale
+        plt.plot([normal_end_x_neg_1, normal_end_x_pos_1], 
+                 [normal_end_z_neg_1, normal_end_z_pos_1], 
+                 'r-', linewidth=0.8)
         
-        normal_end_x_pos_second = x_q[ray] + normal_dx_second[ray] * scale
-        normal_end_z_pos_second = z_q[ray] + normal_dz_second[ray] * scale
-        normal_end_x_neg_second = x_q[ray] - normal_dx_second[ray] * scale
-        normal_end_z_neg_second = z_q[ray] - normal_dz_second[ray] * scale
-        plt.plot([normal_end_x_neg_second, normal_end_x_pos_second], 
-                 [normal_end_z_neg_second, normal_end_z_pos_second], 
-                 'r-', linewidth=1)
+        normal_end_x_pos_2 = x_q[ray] + normal_dx_2[ray] * normal_line_scale
+        normal_end_z_pos_2 = z_q[ray] + normal_dz_2[ray] * normal_line_scale
+        normal_end_x_neg_2 = x_q[ray] - normal_dx_2[ray] * normal_line_scale
+        normal_end_z_neg_2 = z_q[ray] - normal_dz_2[ray] * normal_line_scale
+        plt.plot([normal_end_x_neg_2, normal_end_x_pos_2], 
+                 [normal_end_z_neg_2, normal_end_z_pos_2], 
+                 'r-', linewidth=0.8)
     plt.show()
 
     return {
@@ -248,12 +231,9 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
         "lens_1_z": z_p,
         "pipe_x": x_q,
         "pipe_z": z_q,
-        # ""
     }
 
 if __name__ == "__main__":
-    # plot_setup()
-
     x_a = np.arange(num_elements, dtype=np.float64) * pitch
     x_a = x_a - np.mean(x_a)
     z_a = np.ones_like(x_a) * d
@@ -263,8 +243,6 @@ if __name__ == "__main__":
     Af, Rf = np.meshgrid(af, rf)
     Af = Af.flatten()
     Rf = Rf.flatten()
-
-    # 'xf' and 'yf' are arrays of the positions (x, y) of each target (the suffix 'f' means fire)
     xf = Rf * np.sin(Af)
     zf = Rf * np.cos(Af)
 
@@ -274,87 +252,11 @@ if __name__ == "__main__":
     for m in range(num_elements):
         results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha))
 
-    for m in range(num_elements):
-        plot_setup(show=False)
-        for ray in range(0, num_alpha_points, 5):
-            plt.plot([x_a[m], results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray]],
-                     [z_a[m], results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray]],
-                     "C2",
-                     alpha=0.3)
-        plt.show()
-
-    # z_f, x_f = copy.deepcopy(z_a), copy.deepcopy(x_a)
-
-
-
-    # af = np.linspace(-roi_angle_max, roi_angle_max, num_roi_angle_points)
-    # rf = np.linspace(roi_radius_min, roi_radius_max, 1)
-    # Af, Rf = np.meshgrid(af, rf)
-    # Af = Af.flatten()
-    # Rf = Rf.flatten()
-
-    # # 'xf' and 'yf' are arrays of the positions (x, y) of each target (the suffix 'f' means fire)
-    # xf = Rf * np.sin(Af)
-    # yf = Rf * np.cos(Af)
-
-    # xf = copy.deepcopy(xc)
-    # yf = copy.deepcopy(yc)
-
-    # start = time.time()
-    # results = newton_batch(xc, yc, xf, yf, iter=20)
-    # end = time.time()
-    # print(f"Elapsed time - newton_batch: {end - start} seconds.")
-
-    # idx_element = 32
-
-    # plt.figure()
-    # plt.semilogy(results[idx_element]["maxdist"], "o-")
-    # plt.semilogy(results[idx_element]["mindist"], "o-")
-    # plt.grid()
-    # plt.xlabel("iteration")
-    # plt.ylabel("Distances")
-    # plt.legend(["Max distance", "Min distance"])
-    # plt.title(f"Newton algorithm convergence fof element {idx_element}")
-    # plt.show()
-
-    # tof = dist(
-    #     xc[idx_element],
-    #     yc[idx_element],
-    #     results[idx_element]["x_lens"],
-    #     results[idx_element]["y_lens"],
-    # ) / c_lens
-
-    # tof += dist(
-    #     results[idx_element]["x_lens"],
-    #     results[idx_element]["y_lens"],
-    #     results[idx_element]["x_pipe"],
-    #     results[idx_element]["y_pipe"],
-    # ) / c_water
-
-    # tof += dist(
-    #     results[idx_element]["x_pipe"],
-    #     results[idx_element]["y_pipe"],
-    #     xf,
-    #     yf,
-    # ) / c_pipe
-
-    # tof = tof.reshape((len(rf), len(af)))
-    
-    # plt.figure()
-    # plt.imshow(tof)
-    # plt.colorbar()
-    # plt.axis("auto")
-    # plt.title(f"Times of flight for element {idx_element}")
-    # plt.show()
-
-    # for idx_element in range(0, num_elements):
-    #     plot_diamond()
-    #     plt.plot(xc, yc, ".k")
-    #     for i in np.arange(0, num_roi_angle_points, 5):
-    #         plt.plot(
-    #             [xc[idx_element], results[idx_element]["x_lens"][i], results[idx_element]["x_pipe"][i], results[idx_element]["x_lens2"][i], results[idx_element]["xin"][i]],
-    #             [yc[idx_element], results[idx_element]["y_lens"][i], results[idx_element]["y_pipe"][i], results[idx_element]["y_lens2"][i], results[idx_element]["yin"][i]],
-    #             "C2",
-    #             alpha=0.3,
-    #         )
+    # for m in range(num_elements):
+    #     plot_setup(show=False)
+    #     for ray in range(0, num_alpha_points, 5):
+    #         plt.plot([x_a[m], results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray]],
+    #                  [z_a[m], results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray]],
+    #                  "C2",
+    #                  alpha=0.3)
     #     plt.show()
