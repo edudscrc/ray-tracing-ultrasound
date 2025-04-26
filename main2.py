@@ -139,7 +139,7 @@ def dzdx_pipe(x_q, r_outer):
     return -x_q / np.sqrt(np.square(r_outer) - np.square(x_q))
 
 
-def plot_setup(show=True):
+def plot_setup(show=True, legend=True):
     transducer_x = np.arange(num_elements) * pitch
     transducer_x = transducer_x - np.mean(transducer_x)
     transducer_y = np.ones_like(transducer_x) * d
@@ -153,11 +153,12 @@ def plot_setup(show=True):
 
     plt.figure()
     plt.plot(transducer_x, transducer_y, label="Transducer", color="green")
-    plt.plot(x_alpha, z_alpha, label="Refracting Surface", color="red")
+    plt.plot(x_alpha, z_alpha, label="Refracting surface", color="red")
     plt.plot(x_pipe, z_pipe, label="Pipe", color="blue")
     plt.scatter(0, 0, label="Origin (0, 0)", color="orange")
-    plt.scatter(0, d, label="Transducer's Center", color="black")
-    plt.legend()
+    plt.scatter(0, d, label="Transducer's center", color="black")
+    if legend:
+        plt.legend()
     plt.axis("equal")
     if show:
         plt.show()
@@ -293,7 +294,7 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     z_in = a_intersection * x_in + b_intersection
 
     # Helpful to plot normal lines
-    normal_line_scale = 0.005
+    normal_line_scale = 0.007
 
     normal_angle_1 = phi_h + np.pi / 2
     normal_dx_1 = np.cos(normal_angle_1)
@@ -307,16 +308,28 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     normal_dx_3 = np.cos(normal_angle_3)
     normal_dz_3 = np.sin(normal_angle_3)
 
-    plot_setup(show=False)
-    for ray in range(0, num_alpha_points, 10):
+    plot_setup(show=False, legend=False)
+    for idx, ray in enumerate(range(0, num_alpha_points, 10)):
         if ray < len(intersection_x):
-            plt.plot([x_a, x_p[ray], x_q[ray], intersection_x[ray], x_in[ray]],
-                        [z_a, z_p[ray], z_q[ray], intersection_z[ray], z_in[ray]],
-                        "C2")
+            if idx == 0:
+                plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0", label="Incident ray")
+                plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1", label="Refracted ray (c1->c2)")
+                plt.plot([x_q[ray], intersection_x[ray]], [z_q[ray], intersection_z[ray]], "C2", label="Reflected ray")
+                plt.plot([intersection_x[ray], x_in[ray]], [intersection_z[ray], z_in[ray]], "C3", label="Refracted ray (c2->c1)")
+            else:
+                plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0")
+                plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1")
+                plt.plot([x_q[ray], intersection_x[ray]], [z_q[ray], intersection_z[ray]], "C2")
+                plt.plot([intersection_x[ray], x_in[ray]], [intersection_z[ray], z_in[ray]], "C3")
         else:
-            plt.plot([x_a, x_p[ray], x_q[ray], x_refl[ray]],
-                        [z_a, z_p[ray], z_q[ray], z_refl[ray]],
-                        "C2")
+            if idx == 0:
+                plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0", label="Incident ray")
+                plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1", label="Refracted ray (c1->c2)")
+                plt.plot([x_q[ray], x_refl[ray]], [z_q[ray], z_refl[ray]], "C2", label="Reflected ray")
+            else:
+                plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0")
+                plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1")
+                plt.plot([x_q[ray], x_refl[ray]], [z_q[ray], z_refl[ray]], "C2")
 
         normal_end_x_pos_1 = x_p[ray] + normal_dx_1[ray] * normal_line_scale
         normal_end_z_pos_1 = z_p[ray] + normal_dz_1[ray] * normal_line_scale
@@ -324,7 +337,7 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
         normal_end_z_neg_1 = z_p[ray] - normal_dz_1[ray] * normal_line_scale
         plt.plot([normal_end_x_neg_1, normal_end_x_pos_1], 
                  [normal_end_z_neg_1, normal_end_z_pos_1], 
-                 'r-', linewidth=0.8)
+                 'purple', linewidth=1.0, linestyle='-')
         
         normal_end_x_pos_2 = x_q[ray] + normal_dx_2[ray] * normal_line_scale
         normal_end_z_pos_2 = z_q[ray] + normal_dz_2[ray] * normal_line_scale
@@ -332,7 +345,7 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
         normal_end_z_neg_2 = z_q[ray] - normal_dz_2[ray] * normal_line_scale
         plt.plot([normal_end_x_neg_2, normal_end_x_pos_2], 
                  [normal_end_z_neg_2, normal_end_z_pos_2], 
-                 'r-', linewidth=0.8)
+                 'purple', linewidth=1.0, linestyle='-')
         
         if ray < len(intersection_x):
             normal_end_x_pos_3 = intersection_x[ray] + normal_dx_3[ray] * normal_line_scale
@@ -341,7 +354,8 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
             normal_end_z_neg_3 = intersection_z[ray] - normal_dz_3[ray] * normal_line_scale
             plt.plot([normal_end_x_neg_3, normal_end_x_pos_3], 
                     [normal_end_z_neg_3, normal_end_z_pos_3], 
-                    'r-', linewidth=0.8)
+                    'purple', linewidth=1.0, linestyle='-')
+    plt.legend()
     plt.show()
 
     return {
@@ -363,6 +377,7 @@ if __name__ == "__main__":
 
     results = []
     for m in range(0, num_elements, 10):
+        print(m)
         results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha))
 
     # for m in range(num_elements):
