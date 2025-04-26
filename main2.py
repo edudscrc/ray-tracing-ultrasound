@@ -1,7 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import time
-import copy
 
 c1 = np.float64(6400)
 c2 = np.float64(1483)
@@ -23,6 +21,46 @@ roi_radius_max = r_outer
 roi_radius_min = r_outer - 0.04
 
 num_alpha_points = np.int64(181)
+
+
+def intersect_segments(p1, p2, p3, p4, tol=1e-9):
+    """
+    Finds the intersection point of two line segments.
+    Segment 1: p1 to p2
+    Segment 2: p3 to p4
+    Returns the intersection point (x, y) if they intersect, otherwise None.
+    Uses tolerance for floating point comparisons.
+    """
+    x1, y1 = p1
+    x2, y2 = p2
+    x3, y3 = p3
+    x4, y4 = p4
+
+    # Calculate denominator
+    den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+
+    # Check if lines are parallel or collinear
+    if abs(den) < tol:
+        # Optional: Add check for collinear overlap here if needed
+        return None
+
+    # Calculate numerators for parameters t and u
+    t_num = (x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)
+    u_num = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3))
+
+    # Calculate parameters t and u
+    t = t_num / den
+    u = u_num / den
+
+    # Check if intersection lies within both segments (using tolerance)
+    if (-tol <= t <= 1 + tol) and (-tol <= u <= 1 + tol):
+        # Intersection point calculation (using parameter t)
+        intersect_x = x1 + t * (x2 - x1)
+        intersect_y = y1 + t * (y2 - y1)
+        return (intersect_x, intersect_y)
+    else:
+        # Intersection point is outside the segments
+        return None
 
 
 def roots_bhaskara(a, b, c):
@@ -179,23 +217,61 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     z_q = np.where(mask_upper, z_q1, z_q2)
 
     # Refraction (c2 -> c3)
+    # slope_zc_x = dzdx_pipe(x_q, r_outer)
+    # phi_c = np.arctan(slope_zc_x)
+    # phi_3 = phi_pq - (phi_c + np.pi / 2)
+    # phi_4 = np.arcsin((c3 / c2) * np.sin(phi_3))
+    # # phi_l = phi_c + np.pi / 2 - phi_4  # Equation (B.21) in Appendix B. (Erro de digitação no artigo: phi_4 ao invés de phi_2)
+    # # The equation (B.21) above produces incorrect result. The one below produces correct result.
+    # phi_l = phi_c - np.pi / 2 + phi_4
+
+    # Reflection in the pipe
     slope_zc_x = dzdx_pipe(x_q, r_outer)
     phi_c = np.arctan(slope_zc_x)
     phi_3 = phi_pq - (phi_c + np.pi / 2)
-    phi_4 = np.arcsin((c3 / c2) * np.sin(phi_3))
-    # phi_l = phi_c + np.pi / 2 - phi_4  # Equation (B.21) in Appendix B. (Erro de digitação no artigo: phi_4 ao invés de phi_2)
-    # The equation (B.21) above produces incorrect result. The one below produces correct result.
-    phi_l = phi_c - np.pi / 2 + phi_4
+    phi_4 = -phi_3
+    phi_l = (phi_c + np.pi / 2) + phi_4  # Little change in Equation (B.5) for reflection.
 
     # Line equation
     a_l = np.tan(phi_l)
     b_l = z_q - a_l * x_q
 
+    # Plotting reflection
+    x_refl = x_q + 0.05 * np.cos(phi_l)
+    z_refl = z_q + 0.05 * np.sin(phi_l)
+
+    # --- Intersection Finding Logic ---
+    # Combine coordinates into (N, 2) arrays for easier access
+    points_q = np.vstack((x_q, z_q)).T          # Shape (N, 2) - Start points
+    points_refl = np.vstack((x_refl, z_refl)).T  # Shape (N, 2) - End points
+    points_p = np.vstack((x_p, z_p)).T          # Shape (N, 2) - Curve points
+    intersections = [] # List to store found intersections ((x, z), seg_idx, curve_seg_idx)
+    # Iterate through each line segment (from q to refl)
+    for i in range(num_alpha_points):
+        p1 = points_q[i]
+        p2 = points_refl[i]
+
+        # Iterate through each curve segment (from p[j] to p[j+1])
+        for j in range(num_alpha_points - 1):
+            p3 = points_p[j]
+            p4 = points_p[j + 1]
+
+            # Check for intersection
+            intersection_point = intersect_segments(p1, p2, p3, p4)
+
+            if intersection_point is not None:
+                # Intersection found! Store the point and the indices
+                intersections.append({
+                    'point': intersection_point,
+                    'segment_index': i, # Index of the line segment (q -> refl)
+                    'curve_segment_index': j # Index of the start point of the curve segment
+                })
+
     # Closest point to targets (x_f), (z_f)
-    a4 = -1 / a_l
-    b4 = z_f - a4 * x_f
-    x_in = (b4 - b_l) /(a_l - a4)
-    z_in = a_l * x_in + b_l
+    # a4 = -1 / a_l
+    # b4 = z_f - a4 * x_f
+    # x_in = (b4 - b_l) /(a_l - a4)
+    # z_in = a_l * x_in + b_l
 
     # Helpful to plot normal lines
     normal_line_scale = 0.01
@@ -207,10 +283,15 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     normal_dz_2 = np.sin(normal_angle_2)
 
     plot_setup(show=False)
-    for ray in range(0, len(alpha), 10):
-        plt.plot([x_a, x_p[ray], x_q[ray], x_in[ray]],
-                    [z_a, z_p[ray], z_q[ray], z_in[ray]],
-                    "C2")
+    for ray in range(0, num_alpha_points, 5):
+        if ray < len(intersections):
+            plt.plot([x_a, x_p[ray], x_q[ray], intersections[ray]["point"][0]],
+                        [z_a, z_p[ray], z_q[ray], intersections[ray]["point"][1]],
+                        "C2")
+        else:
+            plt.plot([x_a, x_p[ray], x_q[ray], x_refl[ray]],
+                        [z_a, z_p[ray], z_q[ray], z_refl[ray]],
+                        "C2")
 
         normal_end_x_pos_1 = x_p[ray] + normal_dx_1[ray] * normal_line_scale
         normal_end_z_pos_1 = z_p[ray] + normal_dz_1[ray] * normal_line_scale
