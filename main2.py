@@ -129,16 +129,16 @@ def plot_setup(show=True):
 #     return np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
 
 
-def rhp(x):
-    '''Projects an angle to the Right Half Plane [-pi/2; pi/2]'''
-    x = np.mod(x, np.pi)
-    x = x - (x>np.pi/2)*np.pi
-    x = x + (x<-np.pi/2)*np.pi
-    return x
-
-
 def uhp(x):
     '''Projects an angle to the Upper Half Plane [0; pi]'''
+
+    def rhp(x):
+        '''Projects an angle to the Right Half Plane [-pi/2; pi/2]'''
+        x = np.mod(x, np.pi)
+        x = x - (x>np.pi/2)*np.pi
+        x = x + (x<-np.pi/2)*np.pi
+        return x
+    
     x = rhp(x)
     x = x + (x<0)*np.pi
     return x
@@ -158,6 +158,9 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     # phi_pq = phi_h + (np.pi / 2) - phi_2  # Equation (B.5) in Appendix B.
     # The equation (B.5) above produces incorrect result. The one below produces correct result.
     phi_pq = phi_h - (np.pi / 2) + phi_2
+
+    # If you don't normalize it to the range [0, pi], it will produce incorrect result.
+    phi_pq = uhp(phi_pq)
 
     # Line equation
     a_pq = np.tan(phi_pq)
