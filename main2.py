@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 import time
 import copy
 
-c1 = np.int64(6400)
-c2 = np.int64(1483)
-c3 = np.int64(5600)
+c1 = np.float64(6400)
+c2 = np.float64(1483)
+c3 = np.float64(5600)
 
 l0 = np.float64(0.12156646438729327)
 h0 = np.float64(0.08843353561270673)
@@ -18,9 +18,11 @@ r_outer = np.float64(0.07)
 num_elements = np.int64(64)
 pitch = np.float64(0.0006)
 
-# roi_angle_max = np.float64(alpha_max * 0.9)
+roi_angle_max = alpha_max * 0.9
+roi_radius_max = r_outer
+roi_radius_min = r_outer - 0.04
 
-num_alpha_points = 64
+num_alpha_points = np.int64(64)
 
 
 def roots_bhaskara(a, b, c):
@@ -82,6 +84,13 @@ def dz_dx_from_alpha(alpha):
     h = h_from_alpha(alpha)
     dh_dAlpha = dh_from_alpha(alpha)
 
+    # ???
+    # alpha_ = (np.pi / 2) - alpha
+    # dh_dAlpha = -dh_dAlpha
+    # dz_dAlpha = dh_dAlpha * np.sin(alpha_) + h * np.cos(alpha_)
+    # dx_dAlpha = dh_dAlpha * np.cos(alpha_) - h * np.sin(alpha_)
+
+    # Igual ao artigo
     dz_dAlpha = dh_dAlpha * np.cos(alpha) - h * np.sin(alpha)
     dx_dAlpha = dh_dAlpha * np.sin(alpha) + h * np.cos(alpha)
 
@@ -92,7 +101,7 @@ def dzdx_pipe(x_q, r_outer):
     return -x_q / np.sqrt(np.square(r_outer) - np.square(x_q))
 
 
-def plot_setup():
+def plot_setup(show=True):
     transducer_x = np.arange(num_elements) * pitch
     transducer_x = transducer_x - np.mean(transducer_x)
     transducer_y = np.ones_like(transducer_x) * d
@@ -105,82 +114,131 @@ def plot_setup():
     z_pipe = r_outer * np.cos(angle_pipe)
 
     plt.figure()
-    plt.plot(transducer_x, transducer_y, label="Transducer")
-    plt.plot(x_alpha, z_alpha, label="Refracting Surface")
-    plt.plot(x_pipe, z_pipe, label="Pipe")
-    plt.scatter(0, 0, label="Origin (0, 0)")
-    plt.scatter(0, d, label="Transducer's Center")
+    plt.plot(transducer_x, transducer_y, label="Transducer", color="green")
+    plt.plot(x_alpha, z_alpha, label="Refracting Surface", color="red")
+    plt.plot(x_pipe, z_pipe, label="Pipe", color="blue")
+    plt.scatter(0, 0, label="Origin (0, 0)", color="orange")
+    plt.scatter(0, d, label="Transducer's Center", color="black")
     plt.legend()
+    plt.axis("equal")
+    if show:
+        plt.show()
+
+
+# def dist(x1, y1, x2, y2):
+#     return np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
+
+
+# def snell(incidence_inclination, dz, dx, c1, c2):
+#     """
+#     slope_inclination : inclination of the 'divisor' between the two mediums.
+#     theta_1 : angle of incidence.
+#     theta_2 : refraction angle.
+#     refraction_phi : inclination of the refracted segment.
+#     """
+
+#     slope_inclination = np.arctan2(dz, dx)
+#     theta_1 = incidence_inclination - slope_inclination - (np.pi / 2)
+#     theta_2 = np.arcsin((c2 / c1) * np.sin(theta_1))
+#     refraction_phi = slope_inclination + (np.pi / 2) - theta_2
+#     return refraction_phi
+
+
+def shoot_rays(x_a, z_a, x_f, z_f, alpha):
+    x_p, z_p = x_z_from_alpha(alpha)
+
+    phi_ap = np.arctan2(z_a - z_p, x_a - x_p)  # igual ao artigo
+    # phi_ap = np.arctan2(z_p - z_a, x_p - x_a)
+
+    # First refraction (Snell's Law)
+    d_zh, d_xh = dz_dx_from_alpha(alpha)
+    phi_h = np.arctan2(d_zh, d_xh)
+    phi_1 = phi_ap - (phi_h + np.pi / 2)
+    phi_2 = np.arcsin((c2 / c1) * np.sin(phi_1))
+    # phi_pq = phi_h + (np.pi / 2) - phi_2  # igual ao artigo
+    phi_pq = phi_h - (np.pi / 2) + phi_2
+
+    a_pq = np.tan(phi_pq)
+    b_pq = z_p - a_pq * x_p
+
+    A = np.square(a_pq) + 1
+    B = 2 * a_pq * b_pq
+    C = np.square(b_pq) - np.square(r_outer)
+
+    x_q1, x_q2 = roots_bhaskara(A, B, C)
+    z_q1 = a_pq * x_q1 + b_pq
+    z_q2 = a_pq * x_q2 + b_pq
+
+    mask_upper = z_q1 > z_q2
+    x_q = np.where(mask_upper, x_q1, x_q2)
+    z_q = np.where(mask_upper, z_q1, z_q2)
+
+    # Second refraction (Snell's Law)
+    slope_zc_x = dzdx_pipe(x_q, r_outer)
+    phi_c = np.arctan(slope_zc_x)  # TODO: check if the angle's signal is correct
+    phi_3 = phi_pq - (phi_c + np.pi / 2)
+    phi_4 = np.arcsin((c3 / c2) * np.sin(phi_3))
+    # phi_l = phi_c + np.pi / 2 - phi_4  # Equation B.21 in Appendix B. (Wrong in the article!)
+    phi_l = phi_c - np.pi / 2 + phi_4
+
+    a_l = np.tan(phi_l)
+    b_l = z_q - a_l * x_q
+
+    a4 = -1 / a_l
+    b4 = z_f - a4 * x_f
+    x_in = (b4 - b_l) /(a_l - a4)
+    z_in = a_l * x_in + b_l
+
+    plot_setup(show=False)
+    for ray in range(0, len(alpha), 5):
+        plt.plot([x_a, x_p[ray], x_q[ray], x_in[ray]],
+                    [z_a, z_p[ray], z_q[ray], z_in[ray]],
+                    "C2")
     plt.show()
 
-
-def dist(x1, y1, x2, y2):
-    return np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
-
-
-def snell(incidence_inclination, dz, dx, c1, c2):
-    """
-    slope_inclination : inclination of the 'divisor' between the two mediums.
-    theta_1 : angle of incidence.
-    theta_2 : refraction angle.
-    refraction_phi : inclination of the refracted segment.
-    """
-
-    slope_inclination = np.arctan2(dz, dx)
-    theta_1 = incidence_inclination - slope_inclination - (np.pi / 2)
-    theta_2 = np.arcsin((c2 / c1) * np.sin(theta_1))
-    refraction_phi = slope_inclination + (np.pi / 2) - theta_2
-    return refraction_phi
-
-
-# def shoot_rays(xc, yc, xf, yf):
-#     """
-#     (x_p, z_p) : cartesian coordinates of point P in lens.
-#     (d_zh, d_xh) : slope of the curve h(alpha).
-#     phi_ap : inclination of segment ap.
-#     phi_pq : inclination of segment pq.
-#     (a_pq, b_pq) : coefficients of the line equation for segment pq.
-#     (x_q, z_q) : cartesian coordinates of point Q in coupling medium.
-#     z_pq : line equation for segment pq.
-#     """
-#     alpha = np.linspace(-alpha_max, alpha_max, num_roi_angle_points)
-    
-#     x_p, z_p = x_z_from_alpha(alpha)
-#     d_zh, d_xh = d_zh_d_xh_from_alpha(alpha)
-
-#     phi_ap = np.arctan2(yc - z_p, xc - x_p)
-
-#     phi_pq = snell(phi_ap, d_zh, d_xh, c1, c2)
-
-#     a_pq = np.tan(phi_pq)
-#     b_pq = z_p - a_pq * x_p
-
-#     A = 1 + a_pq ** 2
-#     B = 2 * a_pq * b_pq
-#     C = b_pq ** 2 - r_outer ** 2
-
-#     x_q1, x_q2 = roots_bhaskara(A, B, C)
-#     z_q1 = a_pq * x_q1 + b_pq
-#     z_q2 = a_pq * x_q2 + b_pq
-
-#     mask_upper = (z_q1 > z_q2)
-
-#     x_q = np.where(mask_upper, x_q1, x_q2)
-
-#     z_pq = a_pq * x_q + b_pq
-
-    
-
+    return {
+        "lens_1_x": x_p,
+        "lens_1_z": z_p,
+        "pipe_x": x_q,
+        "pipe_z": z_q,
+        # ""
+    }
 
 if __name__ == "__main__":
-    plot_setup()
-    # plot_diamond()
-    # plt.show()
+    # plot_setup()
 
-    # 'xc' and 'yc' are arrays of the positions (x, y) of each transducer's element
-    # xc = np.arange(num_elements) * pitch
-    # xc = xc - np.mean(xc)
-    # yc = np.ones_like(xc) * d
+    x_a = np.arange(num_elements, dtype=np.float64) * pitch
+    x_a = x_a - np.mean(x_a)
+    z_a = np.ones_like(x_a) * d
+
+    af = np.linspace(-roi_angle_max, roi_angle_max, num_alpha_points)
+    rf = np.linspace(roi_radius_min, roi_radius_max, 1)
+    Af, Rf = np.meshgrid(af, rf)
+    Af = Af.flatten()
+    Rf = Rf.flatten()
+
+    # 'xf' and 'yf' are arrays of the positions (x, y) of each target (the suffix 'f' means fire)
+    xf = Rf * np.sin(Af)
+    zf = Rf * np.cos(Af)
+
+    alpha = np.linspace(-alpha_max, alpha_max, num_alpha_points)
+
+    results = []
+    for m in range(num_elements):
+        results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha))
+
+    for m in range(num_elements):
+        plot_setup(show=False)
+        for ray in range(0, num_alpha_points, 5):
+            plt.plot([x_a[m], results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray]],
+                     [z_a[m], results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray]],
+                     "C2",
+                     alpha=0.3)
+        plt.show()
+
+    # z_f, x_f = copy.deepcopy(z_a), copy.deepcopy(x_a)
+
+
 
     # af = np.linspace(-roi_angle_max, roi_angle_max, num_roi_angle_points)
     # rf = np.linspace(roi_radius_min, roi_radius_max, 1)
