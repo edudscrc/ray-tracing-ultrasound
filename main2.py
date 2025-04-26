@@ -22,7 +22,7 @@ roi_angle_max = alpha_max * 0.9
 roi_radius_max = r_outer
 roi_radius_min = r_outer - 0.04
 
-num_alpha_points = np.int64(64)
+num_alpha_points = np.int64(181)
 
 
 def roots_bhaskara(a, b, c):
@@ -84,7 +84,7 @@ def dz_dx_from_alpha(alpha):
     h = h_from_alpha(alpha)
     dh_dAlpha = dh_from_alpha(alpha)
 
-    # ???
+    # Google Colab (pode ser simplificado)
     # alpha_ = (np.pi / 2) - alpha
     # dh_dAlpha = -dh_dAlpha
     # dz_dAlpha = dh_dAlpha * np.sin(alpha_) + h * np.cos(alpha_)
@@ -144,28 +144,43 @@ def plot_setup(show=True):
 #     return refraction_phi
 
 
-def normalize_angle(angle_rad):
-    """Normalize an angle in radians to the range (-pi, pi]"""
-    return np.arctan2(np.sin(angle_rad), np.cos(angle_rad))
+def rhp(x):
+    '''Projects an angle to the Right Half Plane [-pi/2; pi/2]'''
+    x = np.mod(x, np.pi)
+    x = x - (x>np.pi/2)*np.pi
+    x = x + (x<-np.pi/2)*np.pi
+    return x
+
+
+def uhp(x):
+    '''Projects an angle to the Upper Half Plane [0; pi]'''
+    x = rhp(x)
+    x = x + (x<0)*np.pi
+    return x
 
 
 def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     x_p, z_p = x_z_from_alpha(alpha)
 
     phi_ap = np.arctan2(z_a - z_p, x_a - x_p)  # igual ao artigo
+    # Código no colab (pode ser simplificado):
     # phi_ap = np.arctan2(z_p - z_a, x_p - x_a)
+    # phi_ap = phi_ap + (phi_ap < 0) * np.pi
 
     # First refraction (Snell's Law)
     d_zh, d_xh = dz_dx_from_alpha(alpha)
     phi_h = np.arctan2(d_zh, d_xh)
+
+    normal_angle_first = phi_h + np.pi / 2
+    normal_dx_first = np.cos(normal_angle_first)
+    normal_dz_first = np.sin(normal_angle_first)
+
     phi_1 = phi_ap - (phi_h + np.pi / 2)
-    phi_1 = normalize_angle(phi_1)
     phi_2 = np.arcsin((c2 / c1) * np.sin(phi_1))
-    phi_2 = normalize_angle(phi_2)
     # phi_pq = phi_h + (np.pi / 2) - phi_2  # igual ao artigo
     phi_pq = phi_h - (np.pi / 2) + phi_2
-    phi_pq = normalize_angle(phi_pq)
 
+    # phi_pq = uhp(phi_pq)  # isso muda tudo
     a_pq = np.tan(phi_pq)
     b_pq = z_p - a_pq * x_p
 
@@ -183,15 +198,17 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
 
     # Second refraction (Snell's Law)
     slope_zc_x = dzdx_pipe(x_q, r_outer)
-    phi_c = np.arctan(slope_zc_x)  # TODO: check if the angle's signal is correct
-    phi_c = normalize_angle(phi_c)
+    phi_c = np.arctan(slope_zc_x)
+    # phi_c = rhp(phi_c)
+
+    normal_angle_second = phi_c + np.pi / 2
+    normal_dx_second = np.cos(normal_angle_second)
+    normal_dz_second = np.sin(normal_angle_second)
+
     phi_3 = phi_pq - (phi_c + np.pi / 2)
-    phi_3 = normalize_angle(phi_3)
     phi_4 = np.arcsin((c3 / c2) * np.sin(phi_3))
-    phi_4 = normalize_angle(phi_4)
-    # phi_l = phi_c + np.pi / 2 - phi_4  # Equation B.21 in Appendix B. (Wrong in the article!)
+    # phi_l = phi_c + np.pi / 2 - phi_4  # Equation B.21 in Appendix B. (Errado no artigo: phi_4 ao invés de phi_2)
     phi_l = phi_c - np.pi / 2 + phi_4
-    phi_l = normalize_angle(phi_l)
 
     a_l = np.tan(phi_l)
     b_l = z_q - a_l * x_q
@@ -201,11 +218,29 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     x_in = (b4 - b_l) /(a_l - a4)
     z_in = a_l * x_in + b_l
 
+    scale = 0.01
+
     plot_setup(show=False)
     for ray in range(0, len(alpha), 5):
         plt.plot([x_a, x_p[ray], x_q[ray], x_in[ray]],
                     [z_a, z_p[ray], z_q[ray], z_in[ray]],
                     "C2")
+
+        normal_end_x_pos_first = x_p[ray] + normal_dx_first[ray] * scale
+        normal_end_z_pos_first = z_p[ray] + normal_dz_first[ray] * scale
+        normal_end_x_neg_first = x_p[ray] - normal_dx_first[ray] * scale
+        normal_end_z_neg_first = z_p[ray] - normal_dz_first[ray] * scale
+        plt.plot([normal_end_x_neg_first, normal_end_x_pos_first], 
+                 [normal_end_z_neg_first, normal_end_z_pos_first], 
+                 'r-', linewidth=1)
+        
+        normal_end_x_pos_second = x_q[ray] + normal_dx_second[ray] * scale
+        normal_end_z_pos_second = z_q[ray] + normal_dz_second[ray] * scale
+        normal_end_x_neg_second = x_q[ray] - normal_dx_second[ray] * scale
+        normal_end_z_neg_second = z_q[ray] - normal_dz_second[ray] * scale
+        plt.plot([normal_end_x_neg_second, normal_end_x_pos_second], 
+                 [normal_end_z_neg_second, normal_end_z_pos_second], 
+                 'r-', linewidth=1)
     plt.show()
 
     return {
