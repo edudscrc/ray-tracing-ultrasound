@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+# (((-2 * d * np.cos(alpha) + 2 * T * (np.square(c1) / c2) - np.sqrt(2 * d * np.cos(alpha) - 2 * T * (np.square(c1) / c2) - 4 * A * C)) / (2 * A)) * np.cos(alpha)) - a_l * x - b_l = 0
+
 c1 = np.float64(6400)
 c2 = np.float64(1483)
 c3 = np.float64(5600)
@@ -23,7 +25,7 @@ roi_radius_min = r_outer - 0.04
 num_alpha_points = np.int64(181)
 
 
-def intersect_segments(p1, p2, p3, p4, tol=1e-9):
+def intersect_segments(p1, p2, p3, p4, tol=1e-4):
     """
     Finds the intersection point of two line segments.
     Segment 1: p1 to p2
@@ -182,6 +184,19 @@ def uhp(x):
     return x
 
 
+def plot_normal(angle, x, z, scale=0.007):
+    normal_dx = np.cos(angle)
+    normal_dz = np.sin(angle)
+
+    normal_end_x_pos = x + normal_dx * scale
+    normal_end_z_pos = z + normal_dz * scale
+    normal_end_x_neg = x - normal_dx * scale
+    normal_end_z_neg = z - normal_dz * scale
+    plt.plot([normal_end_x_neg, normal_end_x_pos], 
+             [normal_end_z_neg, normal_end_z_pos], 
+             'purple', linewidth=1.0, linestyle='-')
+
+
 def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     x_p, z_p = x_z_from_alpha(alpha)
 
@@ -216,29 +231,22 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     x_q = np.where(mask_upper, x_q1, x_q2)
     z_q = np.where(mask_upper, z_q1, z_q2)
 
-    # Refraction (c2 -> c3)
-    # slope_zc_x = dzdx_pipe(x_q, r_outer)
-    # phi_c = np.arctan(slope_zc_x)
-    # phi_3 = phi_pq - (phi_c + np.pi / 2)
-    # phi_4 = np.arcsin((c3 / c2) * np.sin(phi_3))
-    # # phi_l = phi_c + np.pi / 2 - phi_4  # Equation (B.21) in Appendix B. (Erro de digitação no artigo: phi_4 ao invés de phi_2)
-    # # The equation (B.21) above produces incorrect result. The one below produces correct result.
-    # phi_l = phi_c - np.pi / 2 + phi_4
-
     # Reflection in the pipe
     slope_zc_x = dzdx_pipe(x_q, r_outer)
     phi_c = np.arctan(slope_zc_x)
     phi_3 = phi_pq - (phi_c + np.pi / 2)
     phi_4 = -phi_3
-    phi_l = (phi_c + np.pi / 2) + phi_4  # Little change in Equation (B.5) for reflection.
+    phi_l = phi_c - (np.pi / 2) + phi_4
+
+    phi_l = uhp(phi_l)
 
     # Line equation
     a_l = np.tan(phi_l)
     b_l = z_q - a_l * x_q
 
     # Plotting reflection
-    x_refl = x_q + 0.05 * np.cos(phi_l)
-    z_refl = z_q + 0.05 * np.sin(phi_l)
+    x_refl = x_q + 0.1 * np.cos(phi_l)
+    z_refl = z_q + 0.1 * np.sin(phi_l)
 
     # --- Intersection Finding Logic ---
     # Combine coordinates into (N, 2) arrays for easier access
@@ -263,13 +271,13 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
             if intersection_point is not None:
                 intersection_x.append(intersection_point[0])
                 intersection_z.append(intersection_point[1])
+                break
 
     intersection_x = np.asarray(intersection_x)
     intersection_z = np.asarray(intersection_z)
     intersection_length = len(intersection_x)
 
     # Refraction (c2 -> c1)
-    phi_l = uhp(phi_l)
     alpha_intersection = np.arctan2(intersection_x, intersection_z)
     d_z_intersection, d_x_intersection = dz_dx_from_alpha(alpha_intersection)
     phi_intersection_incidence = np.arctan2(d_z_intersection, d_x_intersection)
@@ -277,36 +285,15 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     phi_intersection_2 = np.arcsin((c1 / c2) * np.sin(phi_intersection_1))
     phi_last = phi_intersection_incidence - (np.pi / 2) + phi_intersection_2
 
-    phi_last = uhp(phi_last)
-
     # Line equation
     a_intersection = np.tan(phi_last)
     b_intersection = intersection_z - a_intersection * intersection_x
-
-    # Plotting last refraction (c2 -> c1)
-    # x_last = intersection_x + 0.15 * np.cos(phi_last)
-    # z_last = intersection_z + 0.15 * np.sin(phi_last)
 
     # Closest point to targets (x_f), (z_f)
     a4 = -1 / a_intersection
     b4 = z_f[:intersection_length] - a4 * x_f[:intersection_length]
     x_in = (b4 - b_intersection) / (a_intersection - a4)
     z_in = a_intersection * x_in + b_intersection
-
-    # Helpful to plot normal lines
-    normal_line_scale = 0.007
-
-    normal_angle_1 = phi_h + np.pi / 2
-    normal_dx_1 = np.cos(normal_angle_1)
-    normal_dz_1 = np.sin(normal_angle_1)
-
-    normal_angle_2 = phi_c + np.pi / 2
-    normal_dx_2 = np.cos(normal_angle_2)
-    normal_dz_2 = np.sin(normal_angle_2)
-
-    normal_angle_3 = phi_intersection_incidence + np.pi / 2
-    normal_dx_3 = np.cos(normal_angle_3)
-    normal_dz_3 = np.sin(normal_angle_3)
 
     plot_setup(show=False, legend=False)
     for idx, ray in enumerate(range(0, num_alpha_points, 10)):
@@ -331,30 +318,14 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
                 plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1")
                 plt.plot([x_q[ray], x_refl[ray]], [z_q[ray], z_refl[ray]], "C2")
 
-        normal_end_x_pos_1 = x_p[ray] + normal_dx_1[ray] * normal_line_scale
-        normal_end_z_pos_1 = z_p[ray] + normal_dz_1[ray] * normal_line_scale
-        normal_end_x_neg_1 = x_p[ray] - normal_dx_1[ray] * normal_line_scale
-        normal_end_z_neg_1 = z_p[ray] - normal_dz_1[ray] * normal_line_scale
-        plt.plot([normal_end_x_neg_1, normal_end_x_pos_1], 
-                 [normal_end_z_neg_1, normal_end_z_pos_1], 
-                 'purple', linewidth=1.0, linestyle='-')
-        
-        normal_end_x_pos_2 = x_q[ray] + normal_dx_2[ray] * normal_line_scale
-        normal_end_z_pos_2 = z_q[ray] + normal_dz_2[ray] * normal_line_scale
-        normal_end_x_neg_2 = x_q[ray] - normal_dx_2[ray] * normal_line_scale
-        normal_end_z_neg_2 = z_q[ray] - normal_dz_2[ray] * normal_line_scale
-        plt.plot([normal_end_x_neg_2, normal_end_x_pos_2], 
-                 [normal_end_z_neg_2, normal_end_z_pos_2], 
-                 'purple', linewidth=1.0, linestyle='-')
-        
+        plt.scatter(x_q[30], z_q[30], c="red")
+        plt.scatter(x_refl[30], z_refl[30], c="green")
+        plt.plot([x_q[30], x_refl[30]], [z_q[30], z_refl[30]], "pink")
+
+        plot_normal(phi_h[ray] + np.pi / 2, x_p[ray], z_p[ray])
+        plot_normal(phi_c[ray] + np.pi / 2, x_q[ray], z_q[ray])
         if ray < len(intersection_x):
-            normal_end_x_pos_3 = intersection_x[ray] + normal_dx_3[ray] * normal_line_scale
-            normal_end_z_pos_3 = intersection_z[ray] + normal_dz_3[ray] * normal_line_scale
-            normal_end_x_neg_3 = intersection_x[ray] - normal_dx_3[ray] * normal_line_scale
-            normal_end_z_neg_3 = intersection_z[ray] - normal_dz_3[ray] * normal_line_scale
-            plt.plot([normal_end_x_neg_3, normal_end_x_pos_3], 
-                    [normal_end_z_neg_3, normal_end_z_pos_3], 
-                    'purple', linewidth=1.0, linestyle='-')
+            plot_normal(phi_intersection_incidence[ray] + np.pi / 2, intersection_x[ray], intersection_z[ray])
     plt.legend()
     plt.show()
 
@@ -376,8 +347,8 @@ if __name__ == "__main__":
     alpha = np.linspace(-alpha_max, alpha_max, num_alpha_points)
 
     results = []
-    for m in range(0, num_elements, 10):
-        print(m)
+    for m in range(num_elements - 1, -1, -20):
+        print(f'Element shooting: {m}')
         results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha))
 
     # for m in range(num_elements):
