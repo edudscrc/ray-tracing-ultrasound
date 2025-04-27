@@ -25,44 +25,169 @@ roi_radius_min = r_outer - 0.04
 num_alpha_points = np.int64(181)
 
 
-def intersect_segments(p1, p2, p3, p4, tol=1e-4):
+def find_line_curve_intersection(x_line, y_line, x_curve, y_curve):
     """
-    Finds the intersection point of two line segments.
-    Segment 1: p1 to p2
-    Segment 2: p3 to p4
-    Returns the intersection point (x, y) if they intersect, otherwise None.
-    Uses tolerance for floating point comparisons.
+    Finds the intersection point between a line (defined by points x_line, y_line)
+    and a curve (defined by points x_curve, y_curve).
+
+    Assumes the curve points are ordered generally along the x-axis,
+    though strict sorting is not required if the crossing is unique.
+
+    Args:
+        x_line (np.ndarray): X-coordinates of points on the line.
+        y_line (np.ndarray): Y-coordinates of points on the line.
+        x_curve (np.ndarray): X-coordinates of points on the curve.
+        y_curve (np.ndarray): Y-coordinates of points on the curve.
+
+    Returns:
+        tuple: (x_intersect, y_intersect) coordinates of the intersection point,
+               or (None, None) if no intersection is found between segments.
     """
-    x1, y1 = p1
-    x2, y2 = p2
-    x3, y3 = p3
-    x4, y4 = p4
+    if len(x_line) < 2 or len(y_line) < 2:
+        raise ValueError("Line needs at least two points to be defined.")
+    if len(x_curve) < 2 or len(y_curve) < 2:
+        raise ValueError("Curve needs at least two points.")
+    if len(x_line) != len(y_line) or len(x_curve) != len(y_curve):
+        raise ValueError("Coordinate arrays must have the same length.")
 
-    # Calculate denominator
-    den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+    # 1. Find the Line Equation (y = mx + b) using polyfit (linear regression)
+    # Check for vertical line first (infinite slope)
+    if np.all(np.isclose(x_line, x_line[0])):
+        # Vertical line: x = constant
+        line_x_const = x_line[0]
+        # print(f"Detected vertical line: x = {line_x_const}")
 
-    # Check if lines are parallel or collinear
-    if abs(den) < tol:
-        # Optional: Add check for collinear overlap here if needed
-        return None
+        # Find where the curve crosses this x-value
+        # Calculate where x_curve crosses line_x_const
+        cross_indices = np.where(np.diff(np.sign(x_curve - line_x_const)) != 0)[0]
 
-    # Calculate numerators for parameters t and u
-    t_num = (x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)
-    u_num = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3))
+        if len(cross_indices) == 0:
+             # Check if any curve point lies exactly on the line
+             on_line = np.isclose(x_curve, line_x_const)
+             if np.any(on_line):
+                 idx = np.where(on_line)[0][0]
+                #  print(f"Curve point {idx} lies exactly on the vertical line.")
+                 return x_curve[idx], y_curve[idx]
+             else:
+                # print("No intersection found (vertical line does not cross curve segments).")
+                return None, None
 
-    # Calculate parameters t and u
-    t = t_num / den
-    u = u_num / den
+        # Take the first crossing index
+        idx = cross_indices[0]
 
-    # Check if intersection lies within both segments (using tolerance)
-    if (-tol <= t <= 1 + tol) and (-tol <= u <= 1 + tol):
-        # Intersection point calculation (using parameter t)
-        intersect_x = x1 + t * (x2 - x1)
-        intersect_y = y1 + t * (y2 - y1)
-        return (intersect_x, intersect_y)
+        # Linear interpolation for y at x = line_x_const, between points idx and idx+1
+        x1, x2 = x_curve[idx], x_curve[idx+1]
+        y1, y2 = y_curve[idx], y_curve[idx+1]
+
+        # Avoid division by zero if segment is vertical (shouldn't happen if crossing)
+        if np.isclose(x1, x2):
+            #  print(f"Warning: Curve segment {idx}-{idx+1} is vertical, using midpoint y.")
+             y_intersect = (y1 + y2) / 2.0
+             return line_x_const, y_intersect
+
+        # Interpolate y
+        y_intersect = y1 + (y2 - y1) * (line_x_const - x1) / (x2 - x1)
+        # print(f"Intersection found on vertical line between curve points {idx} and {idx+1}")
+        return line_x_const, y_intersect
+
     else:
-        # Intersection point is outside the segments
-        return None
+        # Non-vertical line
+        coeffs = np.polyfit(x_line, y_line, 1)
+        m, b = coeffs[0], coeffs[1]
+        # print(f"Line equation: y = {m:.4f}x + {b:.4f}")
+
+        # 2. Calculate Vertical Differences
+        line_y_at_curve_x = m * x_curve + b
+        diffs = y_curve - line_y_at_curve_x
+
+        # 3. Find Sign Changes
+        sign_changes = np.where(np.diff(np.sign(diffs)) != 0)[0]
+
+        if len(sign_changes) == 0:
+            # Check if any curve point lies exactly on the line
+            on_line = np.isclose(diffs, 0)
+            if np.any(on_line):
+                 idx = np.where(on_line)[0][0]
+                #  print(f"Curve point {idx} lies exactly on the line.")
+                 return x_curve[idx], y_curve[idx]
+            else:
+                # print("No intersection found (line does not cross curve segments).")
+                # Optional: Could return the point of closest approach
+                # min_diff_idx = np.argmin(np.abs(diffs))
+                # return x_curve[min_diff_idx], y_curve[min_diff_idx] # Closest point approx
+                return None, None
+
+        # Take the first sign change index
+        idx = sign_changes[0]
+        # print(f"Sign change detected between curve points {idx} and {idx+1}")
+
+        # 4. Interpolate the Intersection
+        # We need to find x_intersect such that:
+        # y_curve_interpolated(x_intersect) = m * x_intersect + b
+        # Let the curve segment be linear between points idx and idx+1
+        x1, y1 = x_curve[idx], y_curve[idx]
+        x2, y2 = x_curve[idx+1], y_curve[idx+1]
+
+        # Handle vertical curve segment
+        if np.isclose(x1, x2):
+            # print(f"Curve segment {idx}-{idx+1} is vertical at x={x1}")
+            x_intersect = x1
+            y_intersect = m * x_intersect + b
+            # Check if this y is within the segment's y-bounds
+            y_min, y_max = min(y1, y2), max(y1, y2)
+            if y_intersect >= y_min - 1e-9 and y_intersect <= y_max + 1e-9: # Use tolerance
+                #  print("Intersection found on vertical curve segment.")
+                 return x_intersect, y_intersect
+            else:
+                #  print("Intersection point y is outside the vertical segment bounds.")
+                 # This case should ideally not happen if a sign change was correctly detected unless line is also vertical there
+                 # Continue searching if multiple sign changes exist? For now, return None.
+                 return None, None
+
+
+        # Equation of the line segment (y = m_seg * x + b_seg)
+        m_seg = (y2 - y1) / (x2 - x1)
+        b_seg = y1 - m_seg * x1
+
+        # Find x where the two lines intersect: m*x + b = m_seg*x + b_seg
+        if np.isclose(m, m_seg):
+            # Lines are parallel
+            if np.isclose(b, b_seg):
+                # print(f"Line and curve segment {idx}-{idx+1} are collinear.")
+                # Any point on the overlapping segment is an intersection. Return midpoint?
+                # Need to define behaviour here. Returning the segment midpoint for now.
+                x_intersect = (x1 + x2) / 2.0
+                y_intersect = m * x_intersect + b
+                return x_intersect, y_intersect
+            else:
+                # print(f"Line and curve segment {idx}-{idx+1} are parallel but not collinear.")
+                # This shouldn't happen if a sign change was detected across them
+                # Maybe try next sign change if available? For now, return None.
+                return None, None
+
+        # Solve for x_intersect: (m - m_seg) * x = b_seg - b
+        x_intersect = (b_seg - b) / (m - m_seg)
+
+        # Calculate y_intersect using the main line equation
+        y_intersect = m * x_intersect + b
+
+        # Optional sanity check: Ensure intersection lies within the segment bounds
+        x_min, x_max = min(x1, x2), max(x1, x2)
+        y_min, y_max = min(y1, y2), max(y1, y2) # Using y bounds as well
+
+        # Use tolerance for float comparisons
+        if (x_intersect >= x_min - 1e-9 and x_intersect <= x_max + 1e-9 and
+            y_intersect >= y_min - 1e-9 and y_intersect <= y_max + 1e-9):
+            #  print("Intersection confirmed within segment bounds.")
+             return x_intersect, y_intersect
+        else:
+             # This indicates something went wrong, e.g., multiple intersections
+             # or issues with the sign change logic for the given data.
+            #  print("Warning: Calculated intersection point is outside the segment bounds where sign change was detected.")
+            #  print(f"  Segment X: [{x1:.4f}, {x2:.4f}], Intersect X: {x_intersect:.4f}")
+            #  print(f"  Segment Y: [{y1:.4f}, {y2:.4f}], Intersect Y: {y_intersect:.4f}")
+             # Could try searching other sign changes if len(sign_changes)>1
+             return None, None # Or maybe return the calculated point anyway?
 
 
 def roots_bhaskara(a, b, c):
@@ -244,44 +369,28 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     a_l = np.tan(phi_l)
     b_l = z_q - a_l * x_q
 
-    # Plotting reflection
-    x_refl = x_q + 0.1 * np.cos(phi_l)
-    z_refl = z_q + 0.1 * np.sin(phi_l)
+    intersection_x = np.empty_like(x_f)
+    intersection_z = np.empty_like(x_f)
 
-    # --- Intersection Finding Logic ---
-    # Combine coordinates into (N, 2) arrays for easier access
-    points_q = np.vstack((x_q, z_q)).T          # Shape (N, 2) - Start points
-    points_refl = np.vstack((x_refl, z_refl)).T  # Shape (N, 2) - End points
-    points_p = np.vstack((x_p, z_p)).T          # Shape (N, 2) - Curve points
-    intersection_x = []
-    intersection_z = []
-    # Iterate through each line segment (from q to refl)
-    for i in range(num_alpha_points):
-        p1 = points_q[i]
-        p2 = points_refl[i]
+    xx = [None] * num_alpha_points
+    zz = [None] * num_alpha_points
 
-        # Iterate through each curve segment (from p[j] to p[j+1])
-        for j in range(num_alpha_points - 1):
-            p3 = points_p[j]
-            p4 = points_p[j + 1]
+    for ray in range(num_alpha_points):
+        xx[ray] = np.linspace(x_q[ray] - 0.05, x_q[ray] + 0.05, num_alpha_points)
+        
+        # Utiliza várias coordenadas x (linspace) para encontrar vários valores da reta "de reflexão"
+        zz[ray] = a_l[ray] * xx[ray] + b_l[ray]
 
-            # Check for intersection
-            intersection_point = intersect_segments(p1, p2, p3, p4)
+        x_intersect, y_intersect = find_line_curve_intersection(xx[ray], zz[ray], x_p, z_p)
 
-            if intersection_point is not None:
-                intersection_x.append(intersection_point[0])
-                intersection_z.append(intersection_point[1])
-                break
-
-    intersection_x = np.asarray(intersection_x)
-    intersection_z = np.asarray(intersection_z)
-    intersection_length = len(intersection_x)
+        intersection_x[ray] = x_intersect
+        intersection_z[ray] = y_intersect
 
     # Refraction (c2 -> c1)
     alpha_intersection = np.arctan2(intersection_x, intersection_z)
     d_z_intersection, d_x_intersection = dz_dx_from_alpha(alpha_intersection)
     phi_intersection_incidence = np.arctan2(d_z_intersection, d_x_intersection)
-    phi_intersection_1 = phi_l[:intersection_length] - (phi_intersection_incidence + np.pi / 2)
+    phi_intersection_1 = phi_l - (phi_intersection_incidence + np.pi / 2)
     phi_intersection_2 = np.arcsin((c1 / c2) * np.sin(phi_intersection_1))
     phi_last = phi_intersection_incidence - (np.pi / 2) + phi_intersection_2
 
@@ -291,36 +400,23 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
 
     # Closest point to targets (x_f), (z_f)
     a4 = -1 / a_intersection
-    b4 = z_f[:intersection_length] - a4 * x_f[:intersection_length]
+    # b4 = z_f[:intersection_length] - a4 * x_f[:intersection_length]
+    b4 = z_f - a4 * x_f
     x_in = (b4 - b_intersection) / (a_intersection - a4)
     z_in = a_intersection * x_in + b_intersection
 
     plot_setup(show=False, legend=False)
     for idx, ray in enumerate(range(0, num_alpha_points, 10)):
-        if ray < len(intersection_x):
-            if idx == 0:
-                plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0", label="Incident ray")
-                plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1", label="Refracted ray (c1->c2)")
-                plt.plot([x_q[ray], intersection_x[ray]], [z_q[ray], intersection_z[ray]], "C2", label="Reflected ray")
-                plt.plot([intersection_x[ray], x_in[ray]], [intersection_z[ray], z_in[ray]], "C3", label="Refracted ray (c2->c1)")
-            else:
-                plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0")
-                plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1")
-                plt.plot([x_q[ray], intersection_x[ray]], [z_q[ray], intersection_z[ray]], "C2")
-                plt.plot([intersection_x[ray], x_in[ray]], [intersection_z[ray], z_in[ray]], "C3")
+        if idx == 0:
+            plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0", label="Incident ray")
+            plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1", label="Refracted ray (c1->c2)")
+            plt.plot([x_q[ray], intersection_x[ray]], [z_q[ray], intersection_z[ray]], "C2", label="Reflected ray")
+            plt.plot([intersection_x[ray], x_in[ray]], [intersection_z[ray], z_in[ray]], "C3", label="Refracted ray (c2->c1)")
         else:
-            if idx == 0:
-                plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0", label="Incident ray")
-                plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1", label="Refracted ray (c1->c2)")
-                plt.plot([x_q[ray], x_refl[ray]], [z_q[ray], z_refl[ray]], "C2", label="Reflected ray")
-            else:
-                plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0")
-                plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1")
-                plt.plot([x_q[ray], x_refl[ray]], [z_q[ray], z_refl[ray]], "C2")
-
-        plt.scatter(x_q[30], z_q[30], c="red")
-        plt.scatter(x_refl[30], z_refl[30], c="green")
-        plt.plot([x_q[30], x_refl[30]], [z_q[30], z_refl[30]], "pink")
+            plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0")
+            plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1")
+            plt.plot([x_q[ray], intersection_x[ray]], [z_q[ray], intersection_z[ray]], "C2")
+            plt.plot([intersection_x[ray], x_in[ray]], [intersection_z[ray], z_in[ray]], "C3")
 
         plot_normal(phi_h[ray] + np.pi / 2, x_p[ray], z_p[ray])
         plot_normal(phi_c[ray] + np.pi / 2, x_q[ray], z_q[ray])
