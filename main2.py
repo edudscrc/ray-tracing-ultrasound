@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import time
-import copy
+
+# (((-2 * d * np.cos(alpha) + 2 * T * (np.square(c1) / c2) - np.sqrt(2 * d * np.cos(alpha) - 2 * T * (np.square(c1) / c2) - 4 * A * C)) / (2 * A)) * np.cos(alpha)) - a_l * x - b_l = 0
 
 c1 = np.float64(6400)
 c2 = np.float64(1483)
@@ -23,6 +23,171 @@ roi_radius_max = r_outer
 roi_radius_min = r_outer - 0.04
 
 num_alpha_points = np.int64(181)
+
+
+def find_line_curve_intersection(x_line, y_line, x_curve, y_curve):
+    """
+    Finds the intersection point between a line (defined by points x_line, y_line)
+    and a curve (defined by points x_curve, y_curve).
+
+    Assumes the curve points are ordered generally along the x-axis,
+    though strict sorting is not required if the crossing is unique.
+
+    Args:
+        x_line (np.ndarray): X-coordinates of points on the line.
+        y_line (np.ndarray): Y-coordinates of points on the line.
+        x_curve (np.ndarray): X-coordinates of points on the curve.
+        y_curve (np.ndarray): Y-coordinates of points on the curve.
+
+    Returns:
+        tuple: (x_intersect, y_intersect) coordinates of the intersection point,
+               or (None, None) if no intersection is found between segments.
+    """
+    if len(x_line) < 2 or len(y_line) < 2:
+        raise ValueError("Line needs at least two points to be defined.")
+    if len(x_curve) < 2 or len(y_curve) < 2:
+        raise ValueError("Curve needs at least two points.")
+    if len(x_line) != len(y_line) or len(x_curve) != len(y_curve):
+        raise ValueError("Coordinate arrays must have the same length.")
+
+    # 1. Find the Line Equation (y = mx + b) using polyfit (linear regression)
+    # Check for vertical line first (infinite slope)
+    if np.all(np.isclose(x_line, x_line[0])):
+        # Vertical line: x = constant
+        line_x_const = x_line[0]
+        # print(f"Detected vertical line: x = {line_x_const}")
+
+        # Find where the curve crosses this x-value
+        # Calculate where x_curve crosses line_x_const
+        cross_indices = np.where(np.diff(np.sign(x_curve - line_x_const)) != 0)[0]
+
+        if len(cross_indices) == 0:
+             # Check if any curve point lies exactly on the line
+             on_line = np.isclose(x_curve, line_x_const)
+             if np.any(on_line):
+                 idx = np.where(on_line)[0][0]
+                #  print(f"Curve point {idx} lies exactly on the vertical line.")
+                 return x_curve[idx], y_curve[idx]
+             else:
+                # print("No intersection found (vertical line does not cross curve segments).")
+                return None, None
+
+        # Take the first crossing index
+        idx = cross_indices[0]
+
+        # Linear interpolation for y at x = line_x_const, between points idx and idx+1
+        x1, x2 = x_curve[idx], x_curve[idx+1]
+        y1, y2 = y_curve[idx], y_curve[idx+1]
+
+        # Avoid division by zero if segment is vertical (shouldn't happen if crossing)
+        if np.isclose(x1, x2):
+            #  print(f"Warning: Curve segment {idx}-{idx+1} is vertical, using midpoint y.")
+             y_intersect = (y1 + y2) / 2.0
+             return line_x_const, y_intersect
+
+        # Interpolate y
+        y_intersect = y1 + (y2 - y1) * (line_x_const - x1) / (x2 - x1)
+        # print(f"Intersection found on vertical line between curve points {idx} and {idx+1}")
+        return line_x_const, y_intersect
+
+    else:
+        # Non-vertical line
+        coeffs = np.polyfit(x_line, y_line, 1)
+        m, b = coeffs[0], coeffs[1]
+        # print(f"Line equation: y = {m:.4f}x + {b:.4f}")
+
+        # 2. Calculate Vertical Differences
+        line_y_at_curve_x = m * x_curve + b
+        diffs = y_curve - line_y_at_curve_x
+
+        # 3. Find Sign Changes
+        sign_changes = np.where(np.diff(np.sign(diffs)) != 0)[0]
+
+        if len(sign_changes) == 0:
+            # Check if any curve point lies exactly on the line
+            on_line = np.isclose(diffs, 0)
+            if np.any(on_line):
+                 idx = np.where(on_line)[0][0]
+                #  print(f"Curve point {idx} lies exactly on the line.")
+                 return x_curve[idx], y_curve[idx]
+            else:
+                # print("No intersection found (line does not cross curve segments).")
+                # Optional: Could return the point of closest approach
+                # min_diff_idx = np.argmin(np.abs(diffs))
+                # return x_curve[min_diff_idx], y_curve[min_diff_idx] # Closest point approx
+                return None, None
+
+        # Take the first sign change index
+        idx = sign_changes[0]
+        # print(f"Sign change detected between curve points {idx} and {idx+1}")
+
+        # 4. Interpolate the Intersection
+        # We need to find x_intersect such that:
+        # y_curve_interpolated(x_intersect) = m * x_intersect + b
+        # Let the curve segment be linear between points idx and idx+1
+        x1, y1 = x_curve[idx], y_curve[idx]
+        x2, y2 = x_curve[idx+1], y_curve[idx+1]
+
+        # Handle vertical curve segment
+        if np.isclose(x1, x2):
+            # print(f"Curve segment {idx}-{idx+1} is vertical at x={x1}")
+            x_intersect = x1
+            y_intersect = m * x_intersect + b
+            # Check if this y is within the segment's y-bounds
+            y_min, y_max = min(y1, y2), max(y1, y2)
+            if y_intersect >= y_min - 1e-9 and y_intersect <= y_max + 1e-9: # Use tolerance
+                #  print("Intersection found on vertical curve segment.")
+                 return x_intersect, y_intersect
+            else:
+                #  print("Intersection point y is outside the vertical segment bounds.")
+                 # This case should ideally not happen if a sign change was correctly detected unless line is also vertical there
+                 # Continue searching if multiple sign changes exist? For now, return None.
+                 return None, None
+
+
+        # Equation of the line segment (y = m_seg * x + b_seg)
+        m_seg = (y2 - y1) / (x2 - x1)
+        b_seg = y1 - m_seg * x1
+
+        # Find x where the two lines intersect: m*x + b = m_seg*x + b_seg
+        if np.isclose(m, m_seg):
+            # Lines are parallel
+            if np.isclose(b, b_seg):
+                # print(f"Line and curve segment {idx}-{idx+1} are collinear.")
+                # Any point on the overlapping segment is an intersection. Return midpoint?
+                # Need to define behaviour here. Returning the segment midpoint for now.
+                x_intersect = (x1 + x2) / 2.0
+                y_intersect = m * x_intersect + b
+                return x_intersect, y_intersect
+            else:
+                # print(f"Line and curve segment {idx}-{idx+1} are parallel but not collinear.")
+                # This shouldn't happen if a sign change was detected across them
+                # Maybe try next sign change if available? For now, return None.
+                return None, None
+
+        # Solve for x_intersect: (m - m_seg) * x = b_seg - b
+        x_intersect = (b_seg - b) / (m - m_seg)
+
+        # Calculate y_intersect using the main line equation
+        y_intersect = m * x_intersect + b
+
+        # Optional sanity check: Ensure intersection lies within the segment bounds
+        x_min, x_max = min(x1, x2), max(x1, x2)
+        y_min, y_max = min(y1, y2), max(y1, y2) # Using y bounds as well
+
+        # Use tolerance for float comparisons
+        if (x_intersect >= x_min - 1e-9 and x_intersect <= x_max + 1e-9 and
+            y_intersect >= y_min - 1e-9 and y_intersect <= y_max + 1e-9):
+            #  print("Intersection confirmed within segment bounds.")
+             return x_intersect, y_intersect
+        else:
+             # This indicates something went wrong, e.g., multiple intersections
+             # or issues with the sign change logic for the given data.
+            #  print("Warning: Calculated intersection point is outside the segment bounds where sign change was detected.")
+            #  print(f"  Segment X: [{x1:.4f}, {x2:.4f}], Intersect X: {x_intersect:.4f}")
+            #  print(f"  Segment Y: [{y1:.4f}, {y2:.4f}], Intersect Y: {y_intersect:.4f}")
+             # Could try searching other sign changes if len(sign_changes)>1
+             return None, None # Or maybe return the calculated point anyway?
 
 
 def roots_bhaskara(a, b, c):
@@ -84,13 +249,7 @@ def dz_dx_from_alpha(alpha):
     h = h_from_alpha(alpha)
     dh_dAlpha = dh_from_alpha(alpha)
 
-    # Google Colab (pode ser simplificado)
-    # alpha_ = (np.pi / 2) - alpha
-    # dh_dAlpha = -dh_dAlpha
-    # dz_dAlpha = dh_dAlpha * np.sin(alpha_) + h * np.cos(alpha_)
-    # dx_dAlpha = dh_dAlpha * np.cos(alpha_) - h * np.sin(alpha_)
-
-    # Igual ao artigo
+    # Equations (A.19a) and (A.19b) in Appendix A.2.2.
     dz_dAlpha = dh_dAlpha * np.cos(alpha) - h * np.sin(alpha)
     dx_dAlpha = dh_dAlpha * np.sin(alpha) + h * np.cos(alpha)
 
@@ -101,7 +260,7 @@ def dzdx_pipe(x_q, r_outer):
     return -x_q / np.sqrt(np.square(r_outer) - np.square(x_q))
 
 
-def plot_setup(show=True):
+def plot_setup(show=True, legend=True):
     transducer_x = np.arange(num_elements) * pitch
     transducer_x = transducer_x - np.mean(transducer_x)
     transducer_y = np.ones_like(transducer_x) * d
@@ -115,132 +274,148 @@ def plot_setup(show=True):
 
     plt.figure()
     plt.plot(transducer_x, transducer_y, label="Transducer", color="green")
-    plt.plot(x_alpha, z_alpha, label="Refracting Surface", color="red")
+    plt.plot(x_alpha, z_alpha, label="Refracting surface", color="red")
     plt.plot(x_pipe, z_pipe, label="Pipe", color="blue")
     plt.scatter(0, 0, label="Origin (0, 0)", color="orange")
-    plt.scatter(0, d, label="Transducer's Center", color="black")
-    plt.legend()
+    plt.scatter(0, d, label="Transducer's center", color="black")
+    if legend:
+        plt.legend()
     plt.axis("equal")
     if show:
         plt.show()
 
 
-# def dist(x1, y1, x2, y2):
-#     return np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
+def refraction(incidence_phi, dzdx, v1, v2):
+    """
+    dzdx : tuple or ndarray
+    """
+    if isinstance(dzdx, tuple):
+        phi_slope = np.arctan2(dzdx[0], dzdx[1])
+        print('refr 1')
+    elif isinstance(dzdx, np.ndarray):
+        phi_slope = np.arctan(dzdx)
+        print('refr 2')
+    phi_normal = phi_slope + np.pi / 2
+    theta_1 = incidence_phi - (phi_slope + np.pi / 2)
+    theta_2 = np.arcsin((v2 / v1) * np.sin(theta_1))
+    refractive_phi = phi_slope - (np.pi / 2) + theta_2
+
+    return refractive_phi, phi_normal
 
 
-# def snell(incidence_inclination, dz, dx, c1, c2):
-#     """
-#     slope_inclination : inclination of the 'divisor' between the two mediums.
-#     theta_1 : angle of incidence.
-#     theta_2 : refraction angle.
-#     refraction_phi : inclination of the refracted segment.
-#     """
+def reflection(incidence_phi, dzdx):
+    if isinstance(dzdx, tuple):
+        phi_slope = np.arctan2(dzdx[0], dzdx[1])
+        print('refl 1')
+    elif isinstance(dzdx, np.ndarray):
+        phi_slope = np.arctan(dzdx)
+        print('refl 2')
 
-#     slope_inclination = np.arctan2(dz, dx)
-#     theta_1 = incidence_inclination - slope_inclination - (np.pi / 2)
-#     theta_2 = np.arcsin((c2 / c1) * np.sin(theta_1))
-#     refraction_phi = slope_inclination + (np.pi / 2) - theta_2
-#     return refraction_phi
-
-
-def rhp(x):
-    '''Projects an angle to the Right Half Plane [-pi/2; pi/2]'''
-    x = np.mod(x, np.pi)
-    x = x - (x>np.pi/2)*np.pi
-    x = x + (x<-np.pi/2)*np.pi
-    return x
+    phi_normal = phi_slope + np.pi / 2
+    theta_1 = incidence_phi - (phi_slope + np.pi / 2)
+    theta_2 = -theta_1
+    reflective_phi = phi_slope - (np.pi / 2) + theta_2
+    return reflective_phi, phi_normal
 
 
-def uhp(x):
-    '''Projects an angle to the Upper Half Plane [0; pi]'''
-    x = rhp(x)
-    x = x + (x<0)*np.pi
-    return x
+def plot_normal(angle, x, z, scale=0.007):
+    normal_dx = np.cos(angle)
+    normal_dz = np.sin(angle)
+
+    normal_end_x_pos = x + normal_dx * scale
+    normal_end_z_pos = z + normal_dz * scale
+    normal_end_x_neg = x - normal_dx * scale
+    normal_end_z_neg = z - normal_dz * scale
+    plt.plot([normal_end_x_neg, normal_end_x_pos], 
+             [normal_end_z_neg, normal_end_z_pos], 
+             'purple', linewidth=1.0, linestyle='-')
 
 
 def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     x_p, z_p = x_z_from_alpha(alpha)
 
-    phi_ap = np.arctan2(z_a - z_p, x_a - x_p)  # igual ao artigo
-    # Código no colab (pode ser simplificado):
-    # phi_ap = np.arctan2(z_p - z_a, x_p - x_a)
-    # phi_ap = phi_ap + (phi_ap < 0) * np.pi
+    # Equation (B.2) in Appendix B.
+    phi_ap = np.arctan2(z_a - z_p, x_a - x_p)
 
-    # First refraction (Snell's Law)
+    # Refraction (c1 -> c2)
     d_zh, d_xh = dz_dx_from_alpha(alpha)
-    phi_h = np.arctan2(d_zh, d_xh)
+    phi_pq, phi_h = refraction(phi_ap, (d_zh, d_xh), c1, c2)
 
-    normal_angle_first = phi_h + np.pi / 2
-    normal_dx_first = np.cos(normal_angle_first)
-    normal_dz_first = np.sin(normal_angle_first)
-
-    phi_1 = phi_ap - (phi_h + np.pi / 2)
-    phi_2 = np.arcsin((c2 / c1) * np.sin(phi_1))
-    # phi_pq = phi_h + (np.pi / 2) - phi_2  # igual ao artigo
-    phi_pq = phi_h - (np.pi / 2) + phi_2
-
-    # phi_pq = uhp(phi_pq)  # isso muda tudo
+    # Line equation
     a_pq = np.tan(phi_pq)
     b_pq = z_p - a_pq * x_p
 
     A = np.square(a_pq) + 1
+    # Equation (B.11b) in Appendix B. The article is missing the "2".
     B = 2 * a_pq * b_pq
     C = np.square(b_pq) - np.square(r_outer)
 
     x_q1, x_q2 = roots_bhaskara(A, B, C)
     z_q1 = a_pq * x_q1 + b_pq
     z_q2 = a_pq * x_q2 + b_pq
-
     mask_upper = z_q1 > z_q2
     x_q = np.where(mask_upper, x_q1, x_q2)
     z_q = np.where(mask_upper, z_q1, z_q2)
 
-    # Second refraction (Snell's Law)
+    # Reflection in the pipe
     slope_zc_x = dzdx_pipe(x_q, r_outer)
-    phi_c = np.arctan(slope_zc_x)
-    # phi_c = rhp(phi_c)
+    phi_l, phi_c = reflection(phi_pq, slope_zc_x)
 
-    normal_angle_second = phi_c + np.pi / 2
-    normal_dx_second = np.cos(normal_angle_second)
-    normal_dz_second = np.sin(normal_angle_second)
-
-    phi_3 = phi_pq - (phi_c + np.pi / 2)
-    phi_4 = np.arcsin((c3 / c2) * np.sin(phi_3))
-    # phi_l = phi_c + np.pi / 2 - phi_4  # Equation B.21 in Appendix B. (Errado no artigo: phi_4 ao invés de phi_2)
-    phi_l = phi_c - np.pi / 2 + phi_4
-
+    # Line equation
     a_l = np.tan(phi_l)
     b_l = z_q - a_l * x_q
 
-    a4 = -1 / a_l
-    b4 = z_f - a4 * x_f
-    x_in = (b4 - b_l) /(a_l - a4)
-    z_in = a_l * x_in + b_l
+    intersection_x = np.empty_like(x_f)
+    intersection_z = np.empty_like(x_f)
 
-    scale = 0.01
+    xx = [None] * num_alpha_points
+    zz = [None] * num_alpha_points
 
-    plot_setup(show=False)
-    for ray in range(0, len(alpha), 5):
-        plt.plot([x_a, x_p[ray], x_q[ray], x_in[ray]],
-                    [z_a, z_p[ray], z_q[ray], z_in[ray]],
-                    "C2")
-
-        normal_end_x_pos_first = x_p[ray] + normal_dx_first[ray] * scale
-        normal_end_z_pos_first = z_p[ray] + normal_dz_first[ray] * scale
-        normal_end_x_neg_first = x_p[ray] - normal_dx_first[ray] * scale
-        normal_end_z_neg_first = z_p[ray] - normal_dz_first[ray] * scale
-        plt.plot([normal_end_x_neg_first, normal_end_x_pos_first], 
-                 [normal_end_z_neg_first, normal_end_z_pos_first], 
-                 'r-', linewidth=1)
+    for ray in range(num_alpha_points):
+        xx[ray] = np.linspace(x_q[ray] - 0.05, x_q[ray] + 0.05, num_alpha_points)
         
-        normal_end_x_pos_second = x_q[ray] + normal_dx_second[ray] * scale
-        normal_end_z_pos_second = z_q[ray] + normal_dz_second[ray] * scale
-        normal_end_x_neg_second = x_q[ray] - normal_dx_second[ray] * scale
-        normal_end_z_neg_second = z_q[ray] - normal_dz_second[ray] * scale
-        plt.plot([normal_end_x_neg_second, normal_end_x_pos_second], 
-                 [normal_end_z_neg_second, normal_end_z_pos_second], 
-                 'r-', linewidth=1)
+        # Utiliza várias coordenadas x (linspace) para encontrar vários valores da reta "de reflexão"
+        zz[ray] = a_l[ray] * xx[ray] + b_l[ray]
+
+        x_intersect, y_intersect = find_line_curve_intersection(xx[ray], zz[ray], x_p, z_p)
+
+        intersection_x[ray] = x_intersect
+        intersection_z[ray] = y_intersect
+
+    # Refraction (c2 -> c1)
+    alpha_intersection = np.arctan2(intersection_x, intersection_z)
+    d_z_intersection, d_x_intersection = dz_dx_from_alpha(alpha_intersection)
+    phi_last, phi_intersection_incidence = refraction(phi_l, (d_z_intersection, d_x_intersection), c2, c1)
+
+    # Line equation
+    a_intersection = np.tan(phi_last)
+    b_intersection = intersection_z - a_intersection * intersection_x
+
+    # Closest point to targets (x_f), (z_f)
+    a4 = -1 / a_intersection
+    # b4 = z_f[:intersection_length] - a4 * x_f[:intersection_length]
+    b4 = z_f - a4 * x_f
+    x_in = (b4 - b_intersection) / (a_intersection - a4)
+    z_in = a_intersection * x_in + b_intersection
+
+    plot_setup(show=False, legend=False)
+    for idx, ray in enumerate(range(0, num_alpha_points, 10)):
+        if idx == 0:
+            plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0", label="Incident ray")
+            plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1", label="Refracted ray (c1->c2)")
+            plt.plot([x_q[ray], intersection_x[ray]], [z_q[ray], intersection_z[ray]], "C2", label="Reflected ray")
+            plt.plot([intersection_x[ray], x_in[ray]], [intersection_z[ray], z_in[ray]], "C3", label="Refracted ray (c2->c1)")
+        else:
+            plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0")
+            plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1")
+            plt.plot([x_q[ray], intersection_x[ray]], [z_q[ray], intersection_z[ray]], "C2")
+            plt.plot([intersection_x[ray], x_in[ray]], [intersection_z[ray], z_in[ray]], "C3")
+
+        plot_normal(phi_h[ray], x_p[ray], z_p[ray])
+        plot_normal(phi_c[ray], x_q[ray], z_q[ray])
+        if ray < len(intersection_x):
+            plot_normal(phi_intersection_incidence[ray], intersection_x[ray], intersection_z[ray])
+    plt.legend()
     plt.show()
 
     return {
@@ -248,113 +423,28 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
         "lens_1_z": z_p,
         "pipe_x": x_q,
         "pipe_z": z_q,
-        # ""
     }
 
 if __name__ == "__main__":
-    # plot_setup()
-
     x_a = np.arange(num_elements, dtype=np.float64) * pitch
     x_a = x_a - np.mean(x_a)
     z_a = np.ones_like(x_a) * d
 
-    af = np.linspace(-roi_angle_max, roi_angle_max, num_alpha_points)
-    rf = np.linspace(roi_radius_min, roi_radius_max, 1)
-    Af, Rf = np.meshgrid(af, rf)
-    Af = Af.flatten()
-    Rf = Rf.flatten()
-
-    # 'xf' and 'yf' are arrays of the positions (x, y) of each target (the suffix 'f' means fire)
-    xf = Rf * np.sin(Af)
-    zf = Rf * np.cos(Af)
+    xf = np.linspace(x_a[0], x_a[-1], num_alpha_points)
+    zf = np.ones((num_alpha_points,), dtype=np.float64) * d
 
     alpha = np.linspace(-alpha_max, alpha_max, num_alpha_points)
 
     results = []
-    for m in range(num_elements):
+    for m in range(num_elements - 1, -1, -20):
+        print(f'Element shooting: {m}')
         results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha))
 
-    for m in range(num_elements):
-        plot_setup(show=False)
-        for ray in range(0, num_alpha_points, 5):
-            plt.plot([x_a[m], results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray]],
-                     [z_a[m], results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray]],
-                     "C2",
-                     alpha=0.3)
-        plt.show()
-
-    # z_f, x_f = copy.deepcopy(z_a), copy.deepcopy(x_a)
-
-
-
-    # af = np.linspace(-roi_angle_max, roi_angle_max, num_roi_angle_points)
-    # rf = np.linspace(roi_radius_min, roi_radius_max, 1)
-    # Af, Rf = np.meshgrid(af, rf)
-    # Af = Af.flatten()
-    # Rf = Rf.flatten()
-
-    # # 'xf' and 'yf' are arrays of the positions (x, y) of each target (the suffix 'f' means fire)
-    # xf = Rf * np.sin(Af)
-    # yf = Rf * np.cos(Af)
-
-    # xf = copy.deepcopy(xc)
-    # yf = copy.deepcopy(yc)
-
-    # start = time.time()
-    # results = newton_batch(xc, yc, xf, yf, iter=20)
-    # end = time.time()
-    # print(f"Elapsed time - newton_batch: {end - start} seconds.")
-
-    # idx_element = 32
-
-    # plt.figure()
-    # plt.semilogy(results[idx_element]["maxdist"], "o-")
-    # plt.semilogy(results[idx_element]["mindist"], "o-")
-    # plt.grid()
-    # plt.xlabel("iteration")
-    # plt.ylabel("Distances")
-    # plt.legend(["Max distance", "Min distance"])
-    # plt.title(f"Newton algorithm convergence fof element {idx_element}")
-    # plt.show()
-
-    # tof = dist(
-    #     xc[idx_element],
-    #     yc[idx_element],
-    #     results[idx_element]["x_lens"],
-    #     results[idx_element]["y_lens"],
-    # ) / c_lens
-
-    # tof += dist(
-    #     results[idx_element]["x_lens"],
-    #     results[idx_element]["y_lens"],
-    #     results[idx_element]["x_pipe"],
-    #     results[idx_element]["y_pipe"],
-    # ) / c_water
-
-    # tof += dist(
-    #     results[idx_element]["x_pipe"],
-    #     results[idx_element]["y_pipe"],
-    #     xf,
-    #     yf,
-    # ) / c_pipe
-
-    # tof = tof.reshape((len(rf), len(af)))
-    
-    # plt.figure()
-    # plt.imshow(tof)
-    # plt.colorbar()
-    # plt.axis("auto")
-    # plt.title(f"Times of flight for element {idx_element}")
-    # plt.show()
-
-    # for idx_element in range(0, num_elements):
-    #     plot_diamond()
-    #     plt.plot(xc, yc, ".k")
-    #     for i in np.arange(0, num_roi_angle_points, 5):
-    #         plt.plot(
-    #             [xc[idx_element], results[idx_element]["x_lens"][i], results[idx_element]["x_pipe"][i], results[idx_element]["x_lens2"][i], results[idx_element]["xin"][i]],
-    #             [yc[idx_element], results[idx_element]["y_lens"][i], results[idx_element]["y_pipe"][i], results[idx_element]["y_lens2"][i], results[idx_element]["yin"][i]],
-    #             "C2",
-    #             alpha=0.3,
-    #         )
+    # for m in range(num_elements):
+    #     plot_setup(show=False)
+    #     for ray in range(0, num_alpha_points, 5):
+    #         plt.plot([x_a[m], results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray]],
+    #                  [z_a[m], results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray]],
+    #                  "C2",
+    #                  alpha=0.3)
     #     plt.show()
