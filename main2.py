@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 
 # (((-2 * d * np.cos(alpha) + 2 * T * (np.square(c1) / c2) - np.sqrt(2 * d * np.cos(alpha) - 2 * T * (np.square(c1) / c2) - 4 * A * C)) / (2 * A)) * np.cos(alpha)) - a_l * x - b_l = 0
 
+# (((-2 * d * np.cos(alpha) + 2 * T * (np.square(c1) / c2) - np.sqrt(2 * d * np.cos(alpha) - 2 * T * (np.square(c1) / c2) - 4 * A * C)) / (2 * A)) * np.cos(alpha)) - a_l * x - b_l = 0
+
 c1 = np.float64(6400)
 c2 = np.float64(1483)
 c3 = np.float64(5600)
@@ -23,6 +25,171 @@ roi_radius_max = r_outer
 roi_radius_min = r_outer - 0.04
 
 num_alpha_points = np.int64(181)
+
+
+def find_line_curve_intersection(x_line, y_line, x_curve, y_curve):
+    """
+    Finds the intersection point between a line (defined by points x_line, y_line)
+    and a curve (defined by points x_curve, y_curve).
+
+    Assumes the curve points are ordered generally along the x-axis,
+    though strict sorting is not required if the crossing is unique.
+
+    Args:
+        x_line (np.ndarray): X-coordinates of points on the line.
+        y_line (np.ndarray): Y-coordinates of points on the line.
+        x_curve (np.ndarray): X-coordinates of points on the curve.
+        y_curve (np.ndarray): Y-coordinates of points on the curve.
+
+    Returns:
+        tuple: (x_intersect, y_intersect) coordinates of the intersection point,
+               or (None, None) if no intersection is found between segments.
+    """
+    if len(x_line) < 2 or len(y_line) < 2:
+        raise ValueError("Line needs at least two points to be defined.")
+    if len(x_curve) < 2 or len(y_curve) < 2:
+        raise ValueError("Curve needs at least two points.")
+    if len(x_line) != len(y_line) or len(x_curve) != len(y_curve):
+        raise ValueError("Coordinate arrays must have the same length.")
+
+    # 1. Find the Line Equation (y = mx + b) using polyfit (linear regression)
+    # Check for vertical line first (infinite slope)
+    if np.all(np.isclose(x_line, x_line[0])):
+        # Vertical line: x = constant
+        line_x_const = x_line[0]
+        # print(f"Detected vertical line: x = {line_x_const}")
+
+        # Find where the curve crosses this x-value
+        # Calculate where x_curve crosses line_x_const
+        cross_indices = np.where(np.diff(np.sign(x_curve - line_x_const)) != 0)[0]
+
+        if len(cross_indices) == 0:
+             # Check if any curve point lies exactly on the line
+             on_line = np.isclose(x_curve, line_x_const)
+             if np.any(on_line):
+                 idx = np.where(on_line)[0][0]
+                #  print(f"Curve point {idx} lies exactly on the vertical line.")
+                 return x_curve[idx], y_curve[idx]
+             else:
+                # print("No intersection found (vertical line does not cross curve segments).")
+                return None, None
+
+        # Take the first crossing index
+        idx = cross_indices[0]
+
+        # Linear interpolation for y at x = line_x_const, between points idx and idx+1
+        x1, x2 = x_curve[idx], x_curve[idx+1]
+        y1, y2 = y_curve[idx], y_curve[idx+1]
+
+        # Avoid division by zero if segment is vertical (shouldn't happen if crossing)
+        if np.isclose(x1, x2):
+            #  print(f"Warning: Curve segment {idx}-{idx+1} is vertical, using midpoint y.")
+             y_intersect = (y1 + y2) / 2.0
+             return line_x_const, y_intersect
+
+        # Interpolate y
+        y_intersect = y1 + (y2 - y1) * (line_x_const - x1) / (x2 - x1)
+        # print(f"Intersection found on vertical line between curve points {idx} and {idx+1}")
+        return line_x_const, y_intersect
+
+    else:
+        # Non-vertical line
+        coeffs = np.polyfit(x_line, y_line, 1)
+        m, b = coeffs[0], coeffs[1]
+        # print(f"Line equation: y = {m:.4f}x + {b:.4f}")
+
+        # 2. Calculate Vertical Differences
+        line_y_at_curve_x = m * x_curve + b
+        diffs = y_curve - line_y_at_curve_x
+
+        # 3. Find Sign Changes
+        sign_changes = np.where(np.diff(np.sign(diffs)) != 0)[0]
+
+        if len(sign_changes) == 0:
+            # Check if any curve point lies exactly on the line
+            on_line = np.isclose(diffs, 0)
+            if np.any(on_line):
+                 idx = np.where(on_line)[0][0]
+                #  print(f"Curve point {idx} lies exactly on the line.")
+                 return x_curve[idx], y_curve[idx]
+            else:
+                # print("No intersection found (line does not cross curve segments).")
+                # Optional: Could return the point of closest approach
+                # min_diff_idx = np.argmin(np.abs(diffs))
+                # return x_curve[min_diff_idx], y_curve[min_diff_idx] # Closest point approx
+                return None, None
+
+        # Take the first sign change index
+        idx = sign_changes[0]
+        # print(f"Sign change detected between curve points {idx} and {idx+1}")
+
+        # 4. Interpolate the Intersection
+        # We need to find x_intersect such that:
+        # y_curve_interpolated(x_intersect) = m * x_intersect + b
+        # Let the curve segment be linear between points idx and idx+1
+        x1, y1 = x_curve[idx], y_curve[idx]
+        x2, y2 = x_curve[idx+1], y_curve[idx+1]
+
+        # Handle vertical curve segment
+        if np.isclose(x1, x2):
+            # print(f"Curve segment {idx}-{idx+1} is vertical at x={x1}")
+            x_intersect = x1
+            y_intersect = m * x_intersect + b
+            # Check if this y is within the segment's y-bounds
+            y_min, y_max = min(y1, y2), max(y1, y2)
+            if y_intersect >= y_min - 1e-9 and y_intersect <= y_max + 1e-9: # Use tolerance
+                #  print("Intersection found on vertical curve segment.")
+                 return x_intersect, y_intersect
+            else:
+                #  print("Intersection point y is outside the vertical segment bounds.")
+                 # This case should ideally not happen if a sign change was correctly detected unless line is also vertical there
+                 # Continue searching if multiple sign changes exist? For now, return None.
+                 return None, None
+
+
+        # Equation of the line segment (y = m_seg * x + b_seg)
+        m_seg = (y2 - y1) / (x2 - x1)
+        b_seg = y1 - m_seg * x1
+
+        # Find x where the two lines intersect: m*x + b = m_seg*x + b_seg
+        if np.isclose(m, m_seg):
+            # Lines are parallel
+            if np.isclose(b, b_seg):
+                # print(f"Line and curve segment {idx}-{idx+1} are collinear.")
+                # Any point on the overlapping segment is an intersection. Return midpoint?
+                # Need to define behaviour here. Returning the segment midpoint for now.
+                x_intersect = (x1 + x2) / 2.0
+                y_intersect = m * x_intersect + b
+                return x_intersect, y_intersect
+            else:
+                # print(f"Line and curve segment {idx}-{idx+1} are parallel but not collinear.")
+                # This shouldn't happen if a sign change was detected across them
+                # Maybe try next sign change if available? For now, return None.
+                return None, None
+
+        # Solve for x_intersect: (m - m_seg) * x = b_seg - b
+        x_intersect = (b_seg - b) / (m - m_seg)
+
+        # Calculate y_intersect using the main line equation
+        y_intersect = m * x_intersect + b
+
+        # Optional sanity check: Ensure intersection lies within the segment bounds
+        x_min, x_max = min(x1, x2), max(x1, x2)
+        y_min, y_max = min(y1, y2), max(y1, y2) # Using y bounds as well
+
+        # Use tolerance for float comparisons
+        if (x_intersect >= x_min - 1e-9 and x_intersect <= x_max + 1e-9 and
+            y_intersect >= y_min - 1e-9 and y_intersect <= y_max + 1e-9):
+            #  print("Intersection confirmed within segment bounds.")
+             return x_intersect, y_intersect
+        else:
+             # This indicates something went wrong, e.g., multiple intersections
+             # or issues with the sign change logic for the given data.
+            #  print("Warning: Calculated intersection point is outside the segment bounds where sign change was detected.")
+            #  print(f"  Segment X: [{x1:.4f}, {x2:.4f}], Intersect X: {x_intersect:.4f}")
+            #  print(f"  Segment Y: [{y1:.4f}, {y2:.4f}], Intersect Y: {y_intersect:.4f}")
+             # Could try searching other sign changes if len(sign_changes)>1
+             return None, None # Or maybe return the calculated point anyway?
 
 
 def find_line_curve_intersection(x_line, y_line, x_curve, y_curve):
@@ -261,6 +428,7 @@ def dzdx_pipe(x_q, r_outer):
 
 
 def plot_setup(show=True, legend=True):
+def plot_setup(show=True, legend=True):
     transducer_x = np.arange(num_elements) * pitch
     transducer_x = transducer_x - np.mean(transducer_x)
     transducer_y = np.ones_like(transducer_x) * d
@@ -275,8 +443,12 @@ def plot_setup(show=True, legend=True):
     plt.figure()
     plt.plot(transducer_x, transducer_y, label="Transducer", color="green")
     plt.plot(x_alpha, z_alpha, label="Refracting surface", color="red")
+    plt.plot(x_alpha, z_alpha, label="Refracting surface", color="red")
     plt.plot(x_pipe, z_pipe, label="Pipe", color="blue")
     plt.scatter(0, 0, label="Origin (0, 0)", color="orange")
+    plt.scatter(0, d, label="Transducer's center", color="black")
+    if legend:
+        plt.legend()
     plt.scatter(0, d, label="Transducer's center", color="black")
     if legend:
         plt.legend()
@@ -331,7 +503,10 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
 
     # Equation (B.2) in Appendix B.
     phi_ap = np.arctan2(z_a - z_p, x_a - x_p)
+    # Equation (B.2) in Appendix B.
+    phi_ap = np.arctan2(z_a - z_p, x_a - x_p)
 
+    # Refraction (c1 -> c2)
     # Refraction (c1 -> c2)
     d_zh, d_xh = dz_dx_from_alpha(alpha)
     phi_pq, phi_h = refraction(phi_ap, (d_zh, d_xh), c1, c2)
@@ -341,6 +516,7 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
     b_pq = z_p - a_pq * x_p
 
     A = np.square(a_pq) + 1
+    # Equation (B.11b) in Appendix B. The article is missing the "2".
     # Equation (B.11b) in Appendix B. The article is missing the "2".
     B = 2 * a_pq * b_pq
     C = np.square(b_pq) - np.square(r_outer)
@@ -352,6 +528,7 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
     x_q = np.where(mask_upper, x_q1, x_q2)
     z_q = np.where(mask_upper, z_q1, z_q2)
 
+    # Reflection in the pipe
     # Reflection in the pipe
     slope_zc_x = dzdx_pipe(x_q, r_outer)
     phi_l, phi_c = reflection(phi_pq, slope_zc_x)
@@ -430,6 +607,8 @@ if __name__ == "__main__":
     x_a = x_a - np.mean(x_a)
     z_a = np.ones_like(x_a) * d
 
+    xf = np.linspace(x_a[0], x_a[-1], num_alpha_points)
+    zf = np.ones((num_alpha_points,), dtype=np.float64) * d
     xf = np.linspace(x_a[0], x_a[-1], num_alpha_points)
     zf = np.ones((num_alpha_points,), dtype=np.float64) * d
 
