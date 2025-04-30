@@ -291,10 +291,8 @@ def refraction(incidence_phi, dzdx, v1, v2):
     """
     if isinstance(dzdx, tuple):
         phi_slope = np.arctan2(dzdx[0], dzdx[1])
-        print('refr 1')
     elif isinstance(dzdx, np.ndarray):
         phi_slope = np.arctan(dzdx)
-        print('refr 2')
     phi_normal = phi_slope + np.pi / 2
     theta_1 = incidence_phi - (phi_slope + np.pi / 2)
     theta_2 = np.arcsin((v2 / v1) * np.sin(theta_1))
@@ -306,11 +304,8 @@ def refraction(incidence_phi, dzdx, v1, v2):
 def reflection(incidence_phi, dzdx):
     if isinstance(dzdx, tuple):
         phi_slope = np.arctan2(dzdx[0], dzdx[1])
-        print('refl 1')
     elif isinstance(dzdx, np.ndarray):
         phi_slope = np.arctan(dzdx)
-        print('refl 2')
-
     phi_normal = phi_slope + np.pi / 2
     theta_1 = incidence_phi - (phi_slope + np.pi / 2)
     theta_2 = -theta_1
@@ -318,7 +313,7 @@ def reflection(incidence_phi, dzdx):
     return reflective_phi, phi_normal
 
 
-def plot_normal(angle, x, z, scale=0.007):
+def plot_normal(angle, x, z, scale=0.007, color='purple'):
     normal_dx = np.cos(angle)
     normal_dz = np.sin(angle)
 
@@ -328,10 +323,10 @@ def plot_normal(angle, x, z, scale=0.007):
     normal_end_z_neg = z - normal_dz * scale
     plt.plot([normal_end_x_neg, normal_end_x_pos], 
              [normal_end_z_neg, normal_end_z_pos], 
-             'purple', linewidth=1.0, linestyle='-')
+             color, linewidth=1.0, linestyle='-')
 
 
-def shoot_rays(x_a, z_a, x_f, z_f, alpha):
+def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
     x_p, z_p = x_z_from_alpha(alpha)
 
     # Equation (B.2) in Appendix B.
@@ -398,31 +393,36 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha):
     x_in = (b4 - b_intersection) / (a_intersection - a4)
     z_in = a_intersection * x_in + b_intersection
 
-    plot_setup(show=False, legend=False)
-    for idx, ray in enumerate(range(0, num_alpha_points, 10)):
-        if idx == 0:
-            plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0", label="Incident ray")
-            plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1", label="Refracted ray (c1->c2)")
-            plt.plot([x_q[ray], intersection_x[ray]], [z_q[ray], intersection_z[ray]], "C2", label="Reflected ray")
-            plt.plot([intersection_x[ray], x_in[ray]], [intersection_z[ray], z_in[ray]], "C3", label="Refracted ray (c2->c1)")
-        else:
-            plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0")
-            plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1")
-            plt.plot([x_q[ray], intersection_x[ray]], [z_q[ray], intersection_z[ray]], "C2")
-            plt.plot([intersection_x[ray], x_in[ray]], [intersection_z[ray], z_in[ray]], "C3")
+    if plot:
+        plot_setup(show=False, legend=False)
+        for idx, ray in enumerate(range(0, num_alpha_points, 10)):
+            if idx == 0:
+                plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0", label="Incident ray")
+                plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1", label="Refracted ray (c1->c2)")
+                plt.plot([x_q[ray], intersection_x[ray]], [z_q[ray], intersection_z[ray]], "C2", label="Reflected ray")
+                plt.plot([intersection_x[ray], x_in[ray]], [intersection_z[ray], z_in[ray]], "C3", label="Refracted ray (c2->c1)")
+            else:
+                plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0")
+                plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1")
+                plt.plot([x_q[ray], intersection_x[ray]], [z_q[ray], intersection_z[ray]], "C2")
+                plt.plot([intersection_x[ray], x_in[ray]], [intersection_z[ray], z_in[ray]], "C3")
 
-        plot_normal(phi_h[ray], x_p[ray], z_p[ray])
-        plot_normal(phi_c[ray], x_q[ray], z_q[ray])
-        if ray < len(intersection_x):
-            plot_normal(phi_intersection_incidence[ray], intersection_x[ray], intersection_z[ray])
-    plt.legend()
-    plt.show()
+            plot_normal(phi_h[ray], x_p[ray], z_p[ray])
+            plot_normal(phi_c[ray], x_q[ray], z_q[ray])
+            if ray < len(intersection_x):
+                plot_normal(phi_intersection_incidence[ray], intersection_x[ray], intersection_z[ray])
+        plt.legend()
+        plt.show()
 
     return {
         "lens_1_x": x_p,
         "lens_1_z": z_p,
         "pipe_x": x_q,
         "pipe_z": z_q,
+        "lens_2_x": intersection_x,
+        "lens_2_z": intersection_z,
+        "target_x": x_in,
+        "target_z": z_in,
     }
 
 if __name__ == "__main__":
@@ -438,13 +438,13 @@ if __name__ == "__main__":
     results = []
     for m in range(num_elements - 1, -1, -20):
         print(f'Element shooting: {m}')
-        results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha))
+        results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha, plot=False))
 
-    # for m in range(num_elements):
-    #     plot_setup(show=False)
-    #     for ray in range(0, num_alpha_points, 5):
-    #         plt.plot([x_a[m], results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray]],
-    #                  [z_a[m], results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray]],
-    #                  "C2",
-    #                  alpha=0.3)
-    #     plt.show()
+    for m in range(num_elements):
+        plot_setup(show=False)
+        for ray in range(0, num_alpha_points, 5):
+            plt.plot([x_a[m], results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray], results[m]["lens_2_x"][ray], results[m]["target_x"][ray]],
+                     [z_a[m], results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray], results[m]["lens_2_z"][ray], results[m]["target_z"][ray]],
+                     "C2",
+                     alpha=0.3)
+        plt.show()
