@@ -1,10 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-# (((-2 * d * np.cos(alpha) + 2 * T * (np.square(c1) / c2) - np.sqrt(2 * d * np.cos(alpha) - 2 * T * (np.square(c1) / c2) - 4 * A * C)) / (2 * A)) * np.cos(alpha)) - a_l * x - b_l = 0
-
-# (((-2 * d * np.cos(alpha) + 2 * T * (np.square(c1) / c2) - np.sqrt(2 * d * np.cos(alpha) - 2 * T * (np.square(c1) / c2) - 4 * A * C)) / (2 * A)) * np.cos(alpha)) - a_l * x - b_l = 0
-
 c1 = np.float64(6400)
 c2 = np.float64(1483)
 c3 = np.float64(5600)
@@ -428,7 +424,6 @@ def dzdx_pipe(x_q, r_outer):
 
 
 def plot_setup(show=True, legend=True):
-def plot_setup(show=True, legend=True):
     transducer_x = np.arange(num_elements) * pitch
     transducer_x = transducer_x - np.mean(transducer_x)
     transducer_y = np.ones_like(transducer_x) * d
@@ -615,13 +610,13 @@ if __name__ == "__main__":
     alpha = np.linspace(-alpha_max, alpha_max, num_alpha_points)
 
     results = []
-    for m in range(num_elements - 1, -1, -20):
+    for m in range(num_elements):
         print(f'Element shooting: {m}')
         results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha, plot=False))
 
     for m in range(num_elements):
         plot_setup(show=False)
-        for ray in range(0, num_alpha_points, 5):
+        for ray in range(0, num_alpha_points, 10):
             plt.plot([x_a[m], results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray], results[m]["lens_2_x"][ray], results[m]["target_x"][ray]],
                      [z_a[m], results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray], results[m]["lens_2_z"][ray], results[m]["target_z"][ray]],
                      "C2",
