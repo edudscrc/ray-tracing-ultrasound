@@ -271,7 +271,7 @@ def plot_setup(show=True, legend=True):
     z_pipe = r_outer * np.cos(angle_pipe)
 
     plt.figure()
-    plt.plot(transducer_x, transducer_y, label="Transducer", color="green")
+    plt.plot(transducer_x, transducer_y, 'o', markersize=1, label="Transducer", color="green")
     plt.plot(x_alpha, z_alpha, label="Refracting surface", color="red")
     plt.plot(x_pipe, z_pipe, label="Pipe", color="blue")
     plt.scatter(0, 0, label="Origin (0, 0)", color="orange")
@@ -319,6 +319,20 @@ def plot_normal(angle, x, z, scale=0.007, color='purple'):
     normal_end_z_pos = z + normal_dz * scale
     normal_end_x_neg = x - normal_dx * scale
     normal_end_z_neg = z - normal_dz * scale
+    plt.plot([normal_end_x_neg, normal_end_x_pos], 
+             [normal_end_z_neg, normal_end_z_pos], 
+             color, linewidth=1.0, linestyle='-')
+    
+
+def plot_line(angle, x, z, scale=0.007, color='purple', x_pos=True, z_pos=True, x_neg=True, z_neg=True):
+    normal_dx = np.cos(angle)
+    normal_dz = np.sin(angle)
+
+    normal_end_x_pos = x + normal_dx * scale if x_pos else x
+    normal_end_z_pos = z + normal_dz * scale if z_pos else z
+    normal_end_x_neg = x - normal_dx * scale if x_neg else x
+    normal_end_z_neg = z - normal_dz * scale if z_neg else z
+
     plt.plot([normal_end_x_neg, normal_end_x_pos], 
              [normal_end_z_neg, normal_end_z_pos], 
              color, linewidth=1.0, linestyle='-')
@@ -377,8 +391,8 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
     a_l = np.tan(phi_l)
     b_l = z_q - a_l * x_q
 
-    intersection_x = np.empty_like(x_f)
-    intersection_z = np.empty_like(x_f)
+    intersection_x = np.empty_like(alpha)
+    intersection_z = np.empty_like(alpha)
 
     xx = [None] * num_alpha_points
     zz = [None] * num_alpha_points
@@ -399,16 +413,25 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
     d_z_intersection, d_x_intersection = dz_dx_from_alpha(alpha_intersection)
     phi_last, phi_intersection_incidence = refraction(phi_l, (d_z_intersection, d_x_intersection), c2, c1)
 
+    # last_line_dx = np.cos(phi_last)
+    # last_line_dz = np.sin(phi_last)
+    # last_line_end_x_pos = intersection_x
+    # last_line_end_z_pos = intersection_z
+    # last_line_end_x_neg = intersection_x - last_line_dx * 0.25
+    # last_line_end_z_neg = intersection_z - last_line_dz * 0.25
+
     # Line equation
     a_intersection = np.tan(phi_last)
     b_intersection = intersection_z - a_intersection * intersection_x
 
     # Closest point to targets (x_f), (z_f)
-    a4 = -1 / a_intersection
-    # b4 = z_f[:intersection_length] - a4 * x_f[:intersection_length]
-    b4 = z_f - a4 * x_f
-    x_in = (b4 - b_intersection) / (a_intersection - a4)
-    z_in = a_intersection * x_in + b_intersection
+    # a4 = -1 / a_intersection
+    # b4 = z_f - a4 * x_f
+    # x_in = (b4 - b_intersection) / (a_intersection - a4)
+    # z_in = a4 * x_in + b4
+
+    x_in = (z_f - b_intersection) / a_intersection
+    z_in = z_f.copy()
 
     if plot:
         plot_setup(show=False, legend=False)
@@ -424,10 +447,12 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
                 plt.plot([x_q[ray], intersection_x[ray]], [z_q[ray], intersection_z[ray]], "C2")
                 plt.plot([intersection_x[ray], x_in[ray]], [intersection_z[ray], z_in[ray]], "C3")
 
-            plot_normal(phi_h[ray], x_p[ray], z_p[ray])
-            plot_normal(phi_c[ray], x_q[ray], z_q[ray])
-            if ray < len(intersection_x):
-                plot_normal(phi_intersection_incidence[ray], intersection_x[ray], intersection_z[ray])
+            plt.plot(x_f, z_f, 'o', markersize=0.1)
+            # plot_line(phi_last[ray], intersection_x[ray], intersection_z[ray], scale=0.2, x_pos=False, z_pos=False)
+            # plot_normal(phi_h[ray], x_p[ray], z_p[ray])
+            # plot_normal(phi_c[ray], x_q[ray], z_q[ray])
+            # if ray < len(intersection_x):
+                # plot_normal(phi_intersection_incidence[ray], intersection_x[ray], intersection_z[ray])
         plt.legend()
         plt.show()
 
@@ -455,13 +480,31 @@ if __name__ == "__main__":
     results = []
     for m in range(num_elements):
         print(f'Element shooting: {m}')
-        results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha, plot=True))
+        results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha, plot=False))
 
     for m in range(num_elements):
         plot_setup(show=False)
-        for ray in range(0, num_alpha_points, 10):
-            plt.plot([x_a[m], results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray], results[m]["lens_2_x"][ray], results[m]["target_x"][ray]],
-                     [z_a[m], results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray], results[m]["lens_2_z"][ray], results[m]["target_z"][ray]],
-                     "C2",
-                     alpha=0.3)
+        for idx, ray in enumerate(range(0, num_alpha_points, 1)):
+            hit_another_elem = False
+            for elem_x in x_a:
+                if np.isclose(results[m]["target_x"][ray], elem_x):
+                    hit_another_elem = True
+                    break
+            if hit_another_elem:
+                if idx == 0:
+                    plt.plot([x_a[m], results[m]["lens_1_x"][ray]], [z_a[m], results[m]["lens_1_z"][ray]], "C0", label="Incident ray")
+                    plt.plot([results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray]], [results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray]], "C1", label="Refracted ray (c1->c2)")
+                    plt.plot([results[m]["pipe_x"][ray], results[m]["lens_2_x"][ray]], [results[m]["pipe_z"][ray], results[m]["lens_2_z"][ray]], "C2", label="Reflected ray")
+                    plt.plot([results[m]["lens_2_x"][ray], results[m]["target_x"][ray]], [results[m]["lens_2_z"][ray], results[m]["target_z"][ray]], "C3", label="Refracted ray (c2->c1)")
+                else:
+                    plt.plot([x_a[m], results[m]["lens_1_x"][ray]], [z_a[m], results[m]["lens_1_z"][ray]], "C0")
+                    plt.plot([results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray]], [results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray]], "C1")
+                    plt.plot([results[m]["pipe_x"][ray], results[m]["lens_2_x"][ray]], [results[m]["pipe_z"][ray], results[m]["lens_2_z"][ray]], "C2")
+                    plt.plot([results[m]["lens_2_x"][ray], results[m]["target_x"][ray]], [results[m]["lens_2_z"][ray], results[m]["target_z"][ray]], "C3")
+
+        # for ray in range(0, num_alpha_points, 10):
+            # plt.plot([x_a[m], results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray], results[m]["lens_2_x"][ray], results[m]["target_x"][ray]],
+            #          [z_a[m], results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray], results[m]["lens_2_z"][ray], results[m]["target_z"][ray]],
+            #          "C2",
+            #          alpha=0.3)
         plt.show()
