@@ -299,16 +299,16 @@ def refraction(incidence_phi, dzdx, v1, v2):
     return refractive_phi, phi_normal
 
 
-def reflection(incidence_phi, dzdx):
-    if isinstance(dzdx, tuple):
-        phi_slope = np.arctan2(dzdx[0], dzdx[1])
-    elif isinstance(dzdx, np.ndarray):
-        phi_slope = np.arctan(dzdx)
-    phi_normal = phi_slope + np.pi / 2
-    theta_1 = incidence_phi - (phi_slope + np.pi / 2)
-    theta_2 = -theta_1
-    reflective_phi = phi_slope - (np.pi / 2) + theta_2
-    return reflective_phi, phi_normal
+# def reflection(incidence_phi, dzdx):
+#     if isinstance(dzdx, tuple):
+#         phi_slope = np.arctan2(dzdx[0], dzdx[1])
+#     elif isinstance(dzdx, np.ndarray):
+#         phi_slope = np.arctan(dzdx)
+#     phi_normal = phi_slope + np.pi / 2
+#     theta_1 = incidence_phi - (phi_slope + np.pi / 2)
+#     theta_2 = -theta_1
+#     reflective_phi = phi_slope - (np.pi / 2) + theta_2
+#     return reflective_phi, phi_normal
 
 
 def plot_normal(angle, x, z, scale=0.007, color='purple'):
@@ -322,6 +322,21 @@ def plot_normal(angle, x, z, scale=0.007, color='purple'):
     plt.plot([normal_end_x_neg, normal_end_x_pos], 
              [normal_end_z_neg, normal_end_z_pos], 
              color, linewidth=1.0, linestyle='-')
+
+
+def uhp(x):
+    """Projects an angle to the Upper Half Plane [0; pi]"""
+
+    def rhp(x):
+        """Projects an angle to the Right Half Plane [-pi/2; pi/2]"""
+        x = np.mod(x, np.pi)
+        x = x - (x > np.pi / 2) * np.pi
+        x = x + (x < -np.pi / 2) * np.pi
+        return x
+
+    x = rhp(x)
+    x = x + (x < 0) * np.pi
+    return x
 
 
 def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
@@ -352,7 +367,11 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
 
     # Reflection in the pipe
     slope_zc_x = dzdx_pipe(x_q, r_outer)
-    phi_l, phi_c = reflection(phi_pq, slope_zc_x)
+
+    # If using the function below, there is no need for uhp()
+    # phi_l, phi_c = reflection(phi_pq, slope_zc_x)
+    phi_l, phi_c = refraction(phi_pq, slope_zc_x, c2, c2)
+    phi_l = uhp(phi_l)
 
     # Line equation
     a_l = np.tan(phi_l)
@@ -436,7 +455,7 @@ if __name__ == "__main__":
     results = []
     for m in range(num_elements):
         print(f'Element shooting: {m}')
-        results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha, plot=False))
+        results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha, plot=True))
 
     for m in range(num_elements):
         plot_setup(show=False)
