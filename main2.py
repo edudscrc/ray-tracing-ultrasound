@@ -20,7 +20,7 @@ roi_angle_max = alpha_max * 0.9
 roi_radius_max = r_outer
 roi_radius_min = r_outer - 0.04
 
-num_alpha_points = np.int64(181)
+num_alpha_points = np.int64(181 * 5)
 
 
 def find_line_curve_intersection(x_line, y_line, x_curve, y_curve):
@@ -487,7 +487,7 @@ if __name__ == "__main__":
         for idx, ray in enumerate(range(0, num_alpha_points, 1)):
             hit_another_elem = False
             for elem_x in x_a:
-                if np.isclose(results[m]["target_x"][ray], elem_x):
+                if np.isclose(results[m]["target_x"][ray], elem_x, atol=1e-5):
                     hit_another_elem = True
                     break
             if hit_another_elem:
