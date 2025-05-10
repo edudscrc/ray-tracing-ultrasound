@@ -467,6 +467,11 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
         "target_z": z_in,
     }
 
+
+def dist(x1, z1, x2, z2):
+    return np.sqrt((x1 - x2) ** 2 + (z1 - z2) ** 2)
+
+
 if __name__ == "__main__":
     x_a = np.arange(num_elements, dtype=np.float64) * pitch
     x_a = x_a - np.mean(x_a)
@@ -481,6 +486,31 @@ if __name__ == "__main__":
     for m in range(num_elements):
         print(f'Element shooting: {m}')
         results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha, plot=False))
+
+    element_idx = 0
+    tof = []
+    for ray in range(num_alpha_points):
+        hit = False
+        for elem_x in x_a:
+            if np.isclose(results[element_idx]["target_x"][ray], elem_x, atol=1e-5):
+                hit = True
+                tof.append(dist(x_a[element_idx], z_a[element_idx], results[element_idx]["lens_1_x"][ray], results[element_idx]["lens_1_z"][ray]) / c1)
+                tof[-1] += dist(results[element_idx]["lens_1_x"][ray], results[element_idx]["lens_1_z"][ray], results[element_idx]["pipe_x"][ray], results[element_idx]["pipe_z"][ray]) / c2
+                tof[-1] += dist(results[element_idx]["pipe_x"][ray], results[element_idx]["pipe_z"][ray], results[element_idx]["lens_2_x"][ray], results[element_idx]["lens_2_z"][ray]) / c2
+                tof[-1] += dist(results[element_idx]["lens_2_x"][ray], results[element_idx]["lens_2_z"][ray], results[element_idx]["target_x"][ray], results[element_idx]["target_z"][ray]) / c1
+                break
+        if not hit:
+            tof.append(0)
+
+    tof = np.asarray(tof)
+    tof = tof.reshape(1, num_alpha_points)
+
+    plt.figure()
+    plt.imshow(tof)
+    plt.colorbar()
+    plt.axis('auto')
+    plt.title(f"Time of flight for element {element_idx}")
+    plt.show()
 
     for m in range(num_elements):
         plot_setup(show=False)
