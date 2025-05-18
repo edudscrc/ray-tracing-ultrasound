@@ -20,7 +20,7 @@ roi_angle_max = alpha_max * 0.9
 roi_radius_max = r_outer
 roi_radius_min = r_outer - 0.04
 
-num_alpha_points = np.int64(181 * 5)
+num_alpha_points = np.int64(181 * 10)
 
 
 def find_line_curve_intersection(x_line, y_line, x_curve, y_curve):
@@ -493,6 +493,7 @@ if __name__ == "__main__":
         hit = False
         for elem_x in x_a:
             if np.isclose(results[element_idx]["target_x"][ray], elem_x, atol=1e-5):
+                print(f"dist: {np.abs(results[element_idx]["target_x"][ray] - elem_x)}")
                 hit = True
                 tof.append(dist(x_a[element_idx], z_a[element_idx], results[element_idx]["lens_1_x"][ray], results[element_idx]["lens_1_z"][ray]) / c1)
                 tof[-1] += dist(results[element_idx]["lens_1_x"][ray], results[element_idx]["lens_1_z"][ray], results[element_idx]["pipe_x"][ray], results[element_idx]["pipe_z"][ray]) / c2
@@ -504,6 +505,8 @@ if __name__ == "__main__":
 
     tof = np.asarray(tof)
     tof = tof.reshape(1, num_alpha_points)
+
+    print(tof[tof != 0.0])
 
     plt.figure()
     plt.imshow(tof)
