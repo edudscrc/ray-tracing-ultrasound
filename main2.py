@@ -16,11 +16,9 @@ r_outer = np.float64(0.07)
 num_elements = np.int64(64)
 pitch = np.float64(0.0006)
 
-roi_angle_max = alpha_max * 0.9
-roi_radius_max = r_outer
-roi_radius_min = r_outer - 0.04
+num_alpha_points = np.int64(181 * 1)
 
-num_alpha_points = np.int64(181 * 10)
+pipe_offset = 0.01
 
 
 def find_line_curve_intersection(x_line, y_line, x_curve, y_curve):
@@ -268,6 +266,7 @@ def plot_setup(show=True, legend=True):
 
     angle_pipe = np.linspace(-np.pi / 2, np.pi / 2, num_alpha_points)
     x_pipe = r_outer * np.sin(angle_pipe)
+    x_pipe += pipe_offset
     z_pipe = r_outer * np.cos(angle_pipe)
 
     plt.figure()
@@ -299,16 +298,16 @@ def refraction(incidence_phi, dzdx, v1, v2):
     return refractive_phi, phi_normal
 
 
-# def reflection(incidence_phi, dzdx):
-#     if isinstance(dzdx, tuple):
-#         phi_slope = np.arctan2(dzdx[0], dzdx[1])
-#     elif isinstance(dzdx, np.ndarray):
-#         phi_slope = np.arctan(dzdx)
-#     phi_normal = phi_slope + np.pi / 2
-#     theta_1 = incidence_phi - (phi_slope + np.pi / 2)
-#     theta_2 = -theta_1
-#     reflective_phi = phi_slope - (np.pi / 2) + theta_2
-#     return reflective_phi, phi_normal
+def reflection(incidence_phi, dzdx):
+    if isinstance(dzdx, tuple):
+        phi_slope = np.arctan2(dzdx[0], dzdx[1])
+    elif isinstance(dzdx, np.ndarray):
+        phi_slope = np.arctan(dzdx)
+    phi_normal = phi_slope + np.pi / 2
+    theta_1 = incidence_phi - (phi_slope + np.pi / 2)
+    theta_2 = -theta_1
+    reflective_phi = phi_slope - (np.pi / 2) + theta_2
+    return reflective_phi, phi_normal
 
 
 def plot_normal(angle, x, z, scale=0.007, color='purple'):
@@ -369,8 +368,11 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
 
     A = np.square(a_pq) + 1
     # Equation (B.11b) in Appendix B. The article is missing the "2".
-    B = 2 * a_pq * b_pq
-    C = np.square(b_pq) - np.square(r_outer)
+    # B = 2 * a_pq * b_pq
+    # C = np.square(b_pq) - np.square(r_outer)
+
+    B = 2 * (a_pq * b_pq - pipe_offset)
+    C = np.square(pipe_offset) + np.square(b_pq) - np.square(r_outer)
 
     x_q1, x_q2 = roots_bhaskara(A, B, C)
     z_q1 = a_pq * x_q1 + b_pq
@@ -398,7 +400,7 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
     zz = [None] * num_alpha_points
 
     for ray in range(num_alpha_points):
-        xx[ray] = np.linspace(x_q[ray] - 0.05, x_q[ray] + 0.05, num_alpha_points)
+        xx[ray] = np.linspace(x_q[ray] - 0.15, x_q[ray] + 0.15, num_alpha_points)
         
         # Utiliza várias coordenadas x (linspace) para encontrar vários valores da reta "de reflexão"
         zz[ray] = a_l[ray] * xx[ray] + b_l[ray]
@@ -435,6 +437,7 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
 
     if plot:
         plot_setup(show=False, legend=False)
+        plt.xlim([-0.1, 0.1])
         for idx, ray in enumerate(range(0, num_alpha_points, 10)):
             if idx == 0:
                 plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0", label="Incident ray")
@@ -447,12 +450,12 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
                 plt.plot([x_q[ray], intersection_x[ray]], [z_q[ray], intersection_z[ray]], "C2")
                 plt.plot([intersection_x[ray], x_in[ray]], [intersection_z[ray], z_in[ray]], "C3")
 
-            plt.plot(x_f, z_f, 'o', markersize=0.1)
+            # plt.plot(x_f, z_f, 'o', markersize=0.1)
             # plot_line(phi_last[ray], intersection_x[ray], intersection_z[ray], scale=0.2, x_pos=False, z_pos=False)
-            # plot_normal(phi_h[ray], x_p[ray], z_p[ray])
-            # plot_normal(phi_c[ray], x_q[ray], z_q[ray])
-            # if ray < len(intersection_x):
-                # plot_normal(phi_intersection_incidence[ray], intersection_x[ray], intersection_z[ray])
+            plot_normal(phi_h[ray], x_p[ray], z_p[ray])
+            plot_normal(phi_c[ray], x_q[ray], z_q[ray])
+            if ray < len(intersection_x):
+                plot_normal(phi_intersection_incidence[ray], intersection_x[ray], intersection_z[ray])
         plt.legend()
         plt.show()
 
@@ -485,9 +488,9 @@ if __name__ == "__main__":
     results = []
     for m in range(num_elements):
         print(f'Element shooting: {m}')
-        results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha, plot=False))
+        results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha, plot=True))
 
-    element_idx = 0
+    element_idx = 32
     tof = []
     for ray in range(num_alpha_points):
         hit = False
@@ -517,7 +520,7 @@ if __name__ == "__main__":
 
     for m in range(num_elements):
         plot_setup(show=False)
-        for idx, ray in enumerate(range(0, num_alpha_points, 1)):
+        for idx, ray in enumerate(range(0, num_alpha_points, 10)):
             hit_another_elem = False
             for elem_x in x_a:
                 if np.isclose(results[m]["target_x"][ray], elem_x, atol=1e-5):
