@@ -13,12 +13,12 @@ d = l0 + h0
 alpha_max = np.float64(50.62033040986099 * (np.pi / 180))
 r_outer = np.float64(0.07)
 
-num_elements = np.int64(65)
+num_elements = np.int64(64)
 pitch = np.float64(0.0006)
 
 num_alpha_points = np.int64(181 * 5)
 
-pipe_offset = 0.0
+pipe_offset = 0.001
 
 
 def find_line_curve_intersection(x_line, y_line, x_curve, y_curve):
@@ -466,6 +466,9 @@ def dist(x1, z1, x2, z2):
 if __name__ == "__main__":
     x_a = np.arange(num_elements, dtype=np.float64) * pitch
     x_a = x_a - np.mean(x_a)
+    x_aux = list(x_a)
+    x_aux.insert(32, np.float64(0.0))
+    x_a = np.asarray(x_aux, dtype=np.float64)
     z_a = np.ones_like(x_a) * d
 
     xf = np.linspace(x_a[0], x_a[-1], num_alpha_points)
@@ -482,7 +485,7 @@ if __name__ == "__main__":
     tof_d = {idx: [] for idx in range(num_elements)}
     for ray in range(num_alpha_points):
         for elem_idx, elem_x in enumerate(x_a):
-            if np.isclose(results[element_idx]["target_x"][ray], elem_x, atol=1e-6):
+            if np.isclose(results[element_idx]["target_x"][ray], elem_x, atol=1e-5):
                 tof_d[elem_idx].append(dist(x_a[element_idx], z_a[element_idx], results[element_idx]["lens_1_x"][ray], results[element_idx]["lens_1_z"][ray]) / c1)
                 tof_d[elem_idx][-1] += dist(results[element_idx]["lens_1_x"][ray], results[element_idx]["lens_1_z"][ray], results[element_idx]["pipe_x"][ray], results[element_idx]["pipe_z"][ray]) / c2
                 tof_d[elem_idx][-1] += dist(results[element_idx]["pipe_x"][ray], results[element_idx]["pipe_z"][ray], results[element_idx]["lens_2_x"][ray], results[element_idx]["lens_2_z"][ray]) / c2
@@ -500,8 +503,10 @@ if __name__ == "__main__":
     tof = np.asarray(tof)
 
     plt.figure()
-    plt.plot(tof)
+    plt.plot(tof, 'o')
     plt.axis('auto')
+    plt.xlabel("Element Focused (index)")
+    plt.ylabel("Distance (meters)")
     plt.show()
 
     for m in range(element_idx, element_idx + 1):
