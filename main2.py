@@ -483,24 +483,32 @@ if __name__ == "__main__":
         results[m] = shoot_rays(x_a[m], z_a[m], xf, zf, alpha, plot=True)
 
     tof_d = {idx: [] for idx in range(num_elements)}
+    tof_ray = {idx: [] for idx in range(num_elements)}
     for ray in range(num_alpha_points):
         for elem_idx, elem_x in enumerate(x_a):
             if np.isclose(results[element_idx]["target_x"][ray], elem_x, atol=1e-5):
                 tof_d[elem_idx].append(dist(x_a[element_idx], z_a[element_idx], results[element_idx]["lens_1_x"][ray], results[element_idx]["lens_1_z"][ray]) / c1)
+                tof_ray[elem_idx].append(alpha[ray])
                 tof_d[elem_idx][-1] += dist(results[element_idx]["lens_1_x"][ray], results[element_idx]["lens_1_z"][ray], results[element_idx]["pipe_x"][ray], results[element_idx]["pipe_z"][ray]) / c2
                 tof_d[elem_idx][-1] += dist(results[element_idx]["pipe_x"][ray], results[element_idx]["pipe_z"][ray], results[element_idx]["lens_2_x"][ray], results[element_idx]["lens_2_z"][ray]) / c2
                 tof_d[elem_idx][-1] += dist(results[element_idx]["lens_2_x"][ray], results[element_idx]["lens_2_z"][ray], results[element_idx]["target_x"][ray], results[element_idx]["target_z"][ray]) / c1
                 break
 
     tof = []
+    tof_rray = []
     for elem_idx in range(num_elements):
         if len(tof_d[elem_idx]) > 0:
+            tof_ray[elem_idx] = tof_ray[elem_idx][tof_d[elem_idx].index(min(tof_d[elem_idx]))]
             tof_d[elem_idx] = min(tof_d[elem_idx])
         else:
+            tof_ray[elem_idx] = -1
             tof_d[elem_idx] = 0
         tof.append(tof_d[elem_idx])
+        tof_rray.append(tof_ray[elem_idx])
 
     tof = np.asarray(tof)
+    tof_rray = np.asarray(tof_rray)
+    print(tof_rray)
 
     plt.figure()
     plt.plot(tof, 'o')
