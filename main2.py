@@ -13,12 +13,12 @@ d = l0 + h0
 alpha_max = np.float64(50.62033040986099 * (np.pi / 180))
 r_outer = np.float64(0.07)
 
-num_elements = np.int64(64)
+num_elements = np.int64(65)
 pitch = np.float64(0.0006)
 
-num_alpha_points = np.int64(181 * 1)
+num_alpha_points = np.int64(181 * 5)
 
-pipe_offset = 0.01
+pipe_offset = 0.0
 
 
 def find_line_curve_intersection(x_line, y_line, x_curve, y_curve):
@@ -415,28 +415,16 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
     d_z_intersection, d_x_intersection = dz_dx_from_alpha(alpha_intersection)
     phi_last, phi_intersection_incidence = refraction(phi_l, (d_z_intersection, d_x_intersection), c2, c1)
 
-    # last_line_dx = np.cos(phi_last)
-    # last_line_dz = np.sin(phi_last)
-    # last_line_end_x_pos = intersection_x
-    # last_line_end_z_pos = intersection_z
-    # last_line_end_x_neg = intersection_x - last_line_dx * 0.25
-    # last_line_end_z_neg = intersection_z - last_line_dz * 0.25
-
     # Line equation
     a_intersection = np.tan(phi_last)
     b_intersection = intersection_z - a_intersection * intersection_x
-
-    # Closest point to targets (x_f), (z_f)
-    # a4 = -1 / a_intersection
-    # b4 = z_f - a4 * x_f
-    # x_in = (b4 - b_intersection) / (a_intersection - a4)
-    # z_in = a4 * x_in + b4
 
     x_in = (z_f - b_intersection) / a_intersection
     z_in = z_f.copy()
 
     if plot:
         plot_setup(show=False, legend=False)
+        plt.title(f"Element at {x_a} m shooting")
         plt.xlim([-0.1, 0.1])
         for idx, ray in enumerate(range(0, num_alpha_points, 10)):
             if idx == 0:
@@ -485,42 +473,41 @@ if __name__ == "__main__":
 
     alpha = np.linspace(-alpha_max, alpha_max, num_alpha_points)
 
-    results = []
-    for m in range(num_elements):
-        print(f'Element shooting: {m}')
-        results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha, plot=True))
-
     element_idx = 32
-    tof = []
+    results = {idx: {} for idx in range(num_elements)}
+    for m in range(element_idx, element_idx + 1):
+        print(f'Element shooting: {m}')
+        results[m] = shoot_rays(x_a[m], z_a[m], xf, zf, alpha, plot=True)
+
+    tof_d = {idx: [] for idx in range(num_elements)}
     for ray in range(num_alpha_points):
-        hit = False
-        for elem_x in x_a:
-            if np.isclose(results[element_idx]["target_x"][ray], elem_x, atol=1e-5):
-                print(f"dist: {np.abs(results[element_idx]["target_x"][ray] - elem_x)}")
-                hit = True
-                tof.append(dist(x_a[element_idx], z_a[element_idx], results[element_idx]["lens_1_x"][ray], results[element_idx]["lens_1_z"][ray]) / c1)
-                tof[-1] += dist(results[element_idx]["lens_1_x"][ray], results[element_idx]["lens_1_z"][ray], results[element_idx]["pipe_x"][ray], results[element_idx]["pipe_z"][ray]) / c2
-                tof[-1] += dist(results[element_idx]["pipe_x"][ray], results[element_idx]["pipe_z"][ray], results[element_idx]["lens_2_x"][ray], results[element_idx]["lens_2_z"][ray]) / c2
-                tof[-1] += dist(results[element_idx]["lens_2_x"][ray], results[element_idx]["lens_2_z"][ray], results[element_idx]["target_x"][ray], results[element_idx]["target_z"][ray]) / c1
+        for elem_idx, elem_x in enumerate(x_a):
+            if np.isclose(results[element_idx]["target_x"][ray], elem_x, atol=1e-6):
+                tof_d[elem_idx].append(dist(x_a[element_idx], z_a[element_idx], results[element_idx]["lens_1_x"][ray], results[element_idx]["lens_1_z"][ray]) / c1)
+                tof_d[elem_idx][-1] += dist(results[element_idx]["lens_1_x"][ray], results[element_idx]["lens_1_z"][ray], results[element_idx]["pipe_x"][ray], results[element_idx]["pipe_z"][ray]) / c2
+                tof_d[elem_idx][-1] += dist(results[element_idx]["pipe_x"][ray], results[element_idx]["pipe_z"][ray], results[element_idx]["lens_2_x"][ray], results[element_idx]["lens_2_z"][ray]) / c2
+                tof_d[elem_idx][-1] += dist(results[element_idx]["lens_2_x"][ray], results[element_idx]["lens_2_z"][ray], results[element_idx]["target_x"][ray], results[element_idx]["target_z"][ray]) / c1
                 break
-        if not hit:
-            tof.append(0)
+
+    tof = []
+    for elem_idx in range(num_elements):
+        if len(tof_d[elem_idx]) > 0:
+            tof_d[elem_idx] = min(tof_d[elem_idx])
+        else:
+            tof_d[elem_idx] = 0
+        tof.append(tof_d[elem_idx])
 
     tof = np.asarray(tof)
-    tof = tof.reshape(1, num_alpha_points)
-
-    print(tof[tof != 0.0])
 
     plt.figure()
-    plt.imshow(tof)
-    plt.colorbar()
+    plt.plot(tof)
     plt.axis('auto')
-    plt.title(f"Time of flight for element {element_idx}")
     plt.show()
 
-    for m in range(num_elements):
+    for m in range(element_idx, element_idx + 1):
         plot_setup(show=False)
-        for idx, ray in enumerate(range(0, num_alpha_points, 10)):
+        plt.title(f"Element {m} shooting")
+        for idx, ray in enumerate(range(0, num_alpha_points, 1)):
             hit_another_elem = False
             for elem_x in x_a:
                 if np.isclose(results[m]["target_x"][ray], elem_x, atol=1e-5):
@@ -538,9 +525,4 @@ if __name__ == "__main__":
                     plt.plot([results[m]["pipe_x"][ray], results[m]["lens_2_x"][ray]], [results[m]["pipe_z"][ray], results[m]["lens_2_z"][ray]], "C2")
                     plt.plot([results[m]["lens_2_x"][ray], results[m]["target_x"][ray]], [results[m]["lens_2_z"][ray], results[m]["target_z"][ray]], "C3")
 
-        # for ray in range(0, num_alpha_points, 10):
-            # plt.plot([x_a[m], results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray], results[m]["lens_2_x"][ray], results[m]["target_x"][ray]],
-            #          [z_a[m], results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray], results[m]["lens_2_z"][ray], results[m]["target_z"][ray]],
-            #          "C2",
-            #          alpha=0.3)
         plt.show()
