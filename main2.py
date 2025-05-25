@@ -18,7 +18,7 @@ pitch = np.float64(0.0006)
 
 num_alpha_points = np.int64(181 * 5)
 
-pipe_offset = 0.001
+pipe_offset = 0.004
 
 
 def find_line_curve_intersection(x_line, y_line, x_curve, y_curve):
@@ -352,7 +352,7 @@ def uhp(x):
     return x
 
 
-def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
+def shoot_rays(x_a, z_a, z_f, alpha, plot=True):
     x_p, z_p = x_z_from_alpha(alpha)
 
     # Equation (B.2) in Appendix B.
@@ -385,9 +385,9 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
     slope_zc_x = dzdx_pipe(x_q, r_outer)
 
     # If using the function below, there is no need for uhp()
-    # phi_l, phi_c = reflection(phi_pq, slope_zc_x)
-    phi_l, phi_c = refraction(phi_pq, slope_zc_x, c2, c2)
-    phi_l = uhp(phi_l)
+    phi_l, phi_c = reflection(phi_pq, slope_zc_x)
+    # phi_l, phi_c = refraction(phi_pq, slope_zc_x, c2, c2)
+    # phi_l = uhp(phi_l)
 
     # Line equation
     a_l = np.tan(phi_l)
@@ -480,7 +480,7 @@ if __name__ == "__main__":
     results = {idx: {} for idx in range(num_elements)}
     for m in range(element_idx, element_idx + 1):
         print(f'Element shooting: {m}')
-        results[m] = shoot_rays(x_a[m], z_a[m], xf, zf, alpha, plot=True)
+        results[m] = shoot_rays(x_a[m], z_a[m], zf, alpha, plot=True)
 
     tof_d = {idx: [] for idx in range(num_elements)}
     tof_ray = {idx: [] for idx in range(num_elements)}
@@ -511,10 +511,29 @@ if __name__ == "__main__":
     print(tof_rray)
 
     plt.figure()
-    plt.plot(tof, 'o')
+    plt.plot(tof, 'o-')
     plt.axis('auto')
     plt.xlabel("Element Focused (index)")
-    plt.ylabel("Distance (meters)")
+    plt.ylabel("Time of Flight (seconds)")
+    plt.show()
+
+    # filtered_results = shoot_rays(x_a[element_idx], z_a[element_idx], np.full((tof_rray.shape), zf[0]), tof_rray)
+
+    print(tof_rray)
+    plot_setup(show=False)
+    for idx, ray in enumerate(tof_rray):
+        if ray != -1.:
+            if idx == 0:
+                plt.plot([x_a[element_idx], results[element_idx]["lens_1_x"][ray]], [z_a[element_idx], results[element_idx]["lens_1_z"][ray]], "C0", label="Incident ray")
+                plt.plot([results[element_idx]["lens_1_x"][ray], results[element_idx]["pipe_x"][ray]], [results[element_idx]["lens_1_z"][ray], results[element_idx]["pipe_z"][ray]], "C1", label="Refracted ray (c1->c2)")
+                plt.plot([results[element_idx]["pipe_x"][ray], results[element_idx]["lens_2_x"][ray]], [results[element_idx]["pipe_z"][ray], results[element_idx]["lens_2_z"][ray]], "C2", label="Reflected ray")
+                plt.plot([results[element_idx]["lens_2_x"][ray], results[element_idx]["target_x"][ray]], [results[element_idx]["lens_2_z"][ray], results[element_idx]["target_z"][ray]], "C3", label="Refracted ray (c2->c1)")
+            else:
+                plt.plot([x_a[element_idx], results[element_idx]["lens_1_x"][ray]], [z_a[element_idx], results[element_idx]["lens_1_z"][ray]], "C0")
+                plt.plot([results[element_idx]["lens_1_x"][ray], results[element_idx]["pipe_x"][ray]], [results[element_idx]["lens_1_z"][ray], results[element_idx]["pipe_z"][ray]], "C1")
+                plt.plot([results[element_idx]["pipe_x"][ray], results[element_idx]["lens_2_x"][ray]], [results[element_idx]["pipe_z"][ray], results[element_idx]["lens_2_z"][ray]], "C2")
+                plt.plot([results[element_idx]["lens_2_x"][ray], results[element_idx]["target_x"][ray]], [results[element_idx]["lens_2_z"][ray], results[element_idx]["target_z"][ray]], "C3")
+
     plt.show()
 
     for m in range(element_idx, element_idx + 1):
