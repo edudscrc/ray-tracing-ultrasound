@@ -509,6 +509,39 @@ if __name__ == "__main__":
             })
     # --- End of lines from your snippet ---
 
+    # --- Saving the collected information to a .npy file ---
+    if best_paths_to_receivers: # Check if there's data to save
+        # Define the data types for the structured array
+        # emitter_idx: int, receiver_idx: int, receiver_x_pos: float, 
+        # min_tof: float, alpha_emitter_deg: float, alpha_emitter_idx: int
+        dt = np.dtype([('emitter_idx', np.int32),
+                       ('receiver_idx', np.int32),
+                       ('receiver_x_pos', np.float64),
+                       ('min_tof', np.float64),
+                       ('alpha_emitter_deg', np.float64),
+                       ('alpha_emitter_idx', np.int32)])
+        
+        # Convert the list of dictionaries to a list of tuples
+        data_to_save_tuples = [(d['emitter_idx'], d['receiver_idx'], d['receiver_x_pos'], 
+                                d['min_tof'], d['alpha_emitter_deg'], d['alpha_emitter_idx'])
+                               for d in best_paths_to_receivers]
+        
+        structured_array_to_save = np.array(data_to_save_tuples, dtype=dt)
+        
+        # Define filename (you can make this dynamic, e.g., based on emitter_element_idx)
+        output_filename = f"simulation_emitter_{emitter_element_idx}_paths.npy"
+        np.save(output_filename, structured_array_to_save)
+        print(f"\nSaved simulation data to {output_filename}")
+
+        # To load the data later:
+        # loaded_data = np.load(output_filename)
+        # print("\nExample of loaded data (first entry):")
+        # print(loaded_data[0])
+        # print(f"Receiver index from loaded: {loaded_data[0]['receiver_idx']}")
+
+    else:
+        print("No data to save as no paths were found.")
+
     # --- Plotting the collected information ---
     if not best_paths_to_receivers:
         print("No rays from the emitter hit any receiver elements.")
