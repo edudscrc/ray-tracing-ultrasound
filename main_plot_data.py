@@ -23,12 +23,12 @@ def load_and_visualize_data(filepath):
         return
 
     # --- Printing some of the results ---
-    print("\n--- Sample of Loaded Data (first up to 5 entries) ---")
-    for i in range(min(5, len(loaded_data))):
+    for i in range(len(loaded_data)):
         entry = loaded_data[i]
-        print(f"Entry {i}: Emitter Idx: {entry['emitter_idx']}, Receiver Idx: {entry['receiver_idx']}, "
-              f"Receiver X: {entry['receiver_x_pos']:.4f}, Min TOF: {entry['min_tof']:.3e} s, "
-              f"Alpha (Emitter): {entry['alpha_emitter_deg']:.2f}°, Alpha Idx: {entry['alpha_emitter_idx']}")
+        if entry['min_tof'] > 0.0:
+            print(f"Entry {i}: Emitter Idx: {entry['emitter_idx']}, Receiver Idx: {entry['receiver_idx']}, "
+               f"Receiver X: {entry['receiver_x_pos']:.4f}, Min TOF: {entry['min_tof']:.3e} s, "
+               f"Alpha (Emitter): {entry['alpha_emitter_deg']:.2f}°, Alpha Idx: {entry['alpha_emitter_idx']}")
 
     # --- Plotting the collected information ---
     # Extract data for plotting
@@ -102,10 +102,10 @@ def load_and_visualize_data(filepath):
 
 
 if __name__ == "__main__":
-    # Prompt the user for the filepath or use a default
-    default_filename = "simulation_emitter_32_paths.npy" # Change if your default is different
-    filepath_to_load = input(f"Enter the path to the .npy file (default: {default_filename}): ")
-    if not filepath_to_load:
-        filepath_to_load = default_filename
+    emitter_element_idx = 32
     
-    load_and_visualize_data(filepath_to_load)
+    for p_off in range(-20, 20, 1):
+        pipe_offset = p_off / 1000
+        filepath_to_load = f"simulation_emitter_{emitter_element_idx}_pipe_offset_{pipe_offset*1000}mm.npy"
+    
+        load_and_visualize_data(filepath_to_load)

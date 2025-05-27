@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.optimize import minimize
 
 c1 = np.float64(6400)
 c2 = np.float64(1483)
@@ -17,11 +16,9 @@ r_outer = np.float64(0.07)
 num_elements = np.int64(64)
 pitch = np.float64(0.0006)
 
-roi_angle_max = alpha_max * 0.9
-roi_radius_max = r_outer
-roi_radius_min = r_outer - 0.04
+num_alpha_points = np.int64(181 * 5)
 
-num_alpha_points = np.int64(181)
+pipe_offset = -0.007
 
 
 def find_line_curve_intersection(x_line, y_line, x_curve, y_curve):
@@ -269,6 +266,7 @@ def plot_setup(show=True, legend=True):
 
     angle_pipe = np.linspace(-np.pi / 2, np.pi / 2, num_alpha_points)
     x_pipe = r_outer * np.sin(angle_pipe)
+    x_pipe += pipe_offset
     z_pipe = r_outer * np.cos(angle_pipe)
 
     plt.figure()
@@ -298,6 +296,18 @@ def refraction(incidence_phi, dzdx, v1, v2):
     refractive_phi = phi_slope - (np.pi / 2) + theta_2
 
     return refractive_phi, phi_normal
+
+
+def reflection(incidence_phi, dzdx):
+    if isinstance(dzdx, tuple):
+        phi_slope = np.arctan2(dzdx[0], dzdx[1])
+    elif isinstance(dzdx, np.ndarray):
+        phi_slope = np.arctan(dzdx)
+    phi_normal = phi_slope + np.pi / 2
+    theta_1 = incidence_phi - (phi_slope + np.pi / 2)
+    theta_2 = -theta_1
+    reflective_phi = phi_slope - (np.pi / 2) + theta_2
+    return reflective_phi, phi_normal
 
 
 def plot_normal(angle, x, z, scale=0.007, color='purple'):
@@ -342,76 +352,7 @@ def uhp(x):
     return x
 
 
-def shoot_rays_cost_func_aux(params, *args):
-    alpha = params
-    x_a, z_a, x_f, z_f = args
-
-    x_p, z_p = x_z_from_alpha(alpha)
-
-    phi_ap = np.arctan2(z_a - z_p, x_a - x_p)
-
-    d_zh, d_xh = dz_dx_from_alpha(alpha)
-    phi_pq, phi_h = refraction(phi_ap, (d_zh, d_xh), c1, c2)
-
-    a_pq = np.tan(phi_pq)
-    b_pq = z_p - a_pq * x_p
-
-    A = np.square(a_pq) + 1
-    B = 2 * a_pq * b_pq
-    C = np.square(b_pq) - np.square(r_outer)
-
-    x_q1, x_q2 = roots_bhaskara(A, B, C)
-    z_q1 = a_pq * x_q1 + b_pq
-    z_q2 = a_pq * x_q2 + b_pq
-    mask_upper = z_q1 > z_q2
-    x_q = np.where(mask_upper, x_q1, x_q2)
-    z_q = np.where(mask_upper, z_q1, z_q2)
-
-    slope_zc_x = dzdx_pipe(x_q, r_outer)
-
-    phi_l, phi_c = refraction(phi_pq, slope_zc_x, c2, c2)
-    phi_l = uhp(phi_l)
-
-    a_l = np.tan(phi_l)
-    b_l = z_q - a_l * x_q
-
-    intersection_x = np.empty_like(alpha)
-    intersection_z = np.empty_like(alpha)
-
-    xx = [None] * num_alpha_points
-    zz = [None] * num_alpha_points
-
-    for ray in range(num_alpha_points):
-        xx[ray] = np.linspace(x_q[ray] - 0.05, x_q[ray] + 0.05, num_alpha_points)
-        
-        zz[ray] = a_l[ray] * xx[ray] + b_l[ray]
-
-        x_intersect, y_intersect = find_line_curve_intersection(xx[ray], zz[ray], x_p, z_p)
-
-        intersection_x[ray] = x_intersect
-        intersection_z[ray] = y_intersect
-
-    alpha_intersection = np.arctan2(intersection_x, intersection_z)
-    d_z_intersection, d_x_intersection = dz_dx_from_alpha(alpha_intersection)
-    phi_last, phi_intersection_incidence = refraction(phi_l, (d_z_intersection, d_x_intersection), c2, c1)
-
-    a_intersection = np.tan(phi_last)
-    b_intersection = intersection_z - a_intersection * intersection_x
-
-    x_hit = (z_f - b_intersection) / a_intersection
-    z_hit = z_f.copy()
-
-    r = np.square(x_hit - x_f)
-
-    # r_idx = r[~np.isnan(r)]
-
-    return r
-
-
-def shoot_rays_cost_func(params, *args):
-    alpha = params
-    x_a, z_a, x_f, z_f, closest = args
-
+def shoot_rays(x_a, z_a, z_f, alpha, plot=True):
     x_p, z_p = x_z_from_alpha(alpha)
 
     # Equation (B.2) in Appendix B.
@@ -427,8 +368,11 @@ def shoot_rays_cost_func(params, *args):
 
     A = np.square(a_pq) + 1
     # Equation (B.11b) in Appendix B. The article is missing the "2".
-    B = 2 * a_pq * b_pq
-    C = np.square(b_pq) - np.square(r_outer)
+    # B = 2 * a_pq * b_pq
+    # C = np.square(b_pq) - np.square(r_outer)
+
+    B = 2 * (a_pq * b_pq - pipe_offset)
+    C = np.square(pipe_offset) + np.square(b_pq) - np.square(r_outer)
 
     x_q1, x_q2 = roots_bhaskara(A, B, C)
     z_q1 = a_pq * x_q1 + b_pq
@@ -441,9 +385,9 @@ def shoot_rays_cost_func(params, *args):
     slope_zc_x = dzdx_pipe(x_q, r_outer)
 
     # If using the function below, there is no need for uhp()
-    # phi_l, phi_c = reflection(phi_pq, slope_zc_x)
-    phi_l, phi_c = refraction(phi_pq, slope_zc_x, c2, c2)
-    phi_l = uhp(phi_l)
+    phi_l, phi_c = reflection(phi_pq, slope_zc_x)
+    # phi_l, phi_c = refraction(phi_pq, slope_zc_x, c2, c2)
+    # phi_l = uhp(phi_l)
 
     # Line equation
     a_l = np.tan(phi_l)
@@ -456,7 +400,7 @@ def shoot_rays_cost_func(params, *args):
     zz = [None] * num_alpha_points
 
     for ray in range(num_alpha_points):
-        xx[ray] = np.linspace(x_q[ray] - 0.05, x_q[ray] + 0.05, num_alpha_points)
+        xx[ray] = np.linspace(x_q[ray] - 0.15, x_q[ray] + 0.15, num_alpha_points)
         
         # Utiliza várias coordenadas x (linspace) para encontrar vários valores da reta "de reflexão"
         zz[ray] = a_l[ray] * xx[ray] + b_l[ray]
@@ -474,101 +418,14 @@ def shoot_rays_cost_func(params, *args):
     # Line equation
     a_intersection = np.tan(phi_last)
     b_intersection = intersection_z - a_intersection * intersection_x
-
-    x_hit = (z_f - b_intersection) / a_intersection
-    z_hit = z_f.copy()
-
-    r = np.square(x_hit - x_f)
-
-    # print(f'{r[closest]}')
-
-    # print(r[closest])
-
-    return r[closest]
-
-
-def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
-    x_p, z_p = x_z_from_alpha(alpha)
-
-    # Equation (B.2) in Appendix B.
-    phi_ap = np.arctan2(z_a - z_p, x_a - x_p)
-
-    # Refraction (c1 -> c2)
-    d_zh, d_xh = dz_dx_from_alpha(alpha)
-    phi_pq, phi_h = refraction(phi_ap, (d_zh, d_xh), c1, c2)
-
-    # Line equation
-    a_pq = np.tan(phi_pq)
-    b_pq = z_p - a_pq * x_p
-
-    A = np.square(a_pq) + 1
-    # Equation (B.11b) in Appendix B. The article is missing the "2".
-    B = 2 * a_pq * b_pq
-    C = np.square(b_pq) - np.square(r_outer)
-
-    x_q1, x_q2 = roots_bhaskara(A, B, C)
-    z_q1 = a_pq * x_q1 + b_pq
-    z_q2 = a_pq * x_q2 + b_pq
-    mask_upper = z_q1 > z_q2
-    x_q = np.where(mask_upper, x_q1, x_q2)
-    z_q = np.where(mask_upper, z_q1, z_q2)
-
-    # Reflection in the pipe
-    slope_zc_x = dzdx_pipe(x_q, r_outer)
-
-    # If using the function below, there is no need for uhp()
-    # phi_l, phi_c = reflection(phi_pq, slope_zc_x)
-    phi_l, phi_c = refraction(phi_pq, slope_zc_x, c2, c2)
-    phi_l = uhp(phi_l)
-
-    # Line equation
-    a_l = np.tan(phi_l)
-    b_l = z_q - a_l * x_q
-
-    intersection_x = np.empty_like(alpha)
-    intersection_z = np.empty_like(alpha)
-
-    xx = [None] * num_alpha_points
-    zz = [None] * num_alpha_points
-
-    for ray in range(num_alpha_points):
-        xx[ray] = np.linspace(x_q[ray] - 0.05, x_q[ray] + 0.05, num_alpha_points)
-        
-        # Utiliza várias coordenadas x (linspace) para encontrar vários valores da reta "de reflexão"
-        zz[ray] = a_l[ray] * xx[ray] + b_l[ray]
-
-        x_intersect, y_intersect = find_line_curve_intersection(xx[ray], zz[ray], x_p, z_p)
-
-        intersection_x[ray] = x_intersect
-        intersection_z[ray] = y_intersect
-
-    # Refraction (c2 -> c1)
-    alpha_intersection = np.arctan2(intersection_x, intersection_z)
-    d_z_intersection, d_x_intersection = dz_dx_from_alpha(alpha_intersection)
-    phi_last, phi_intersection_incidence = refraction(phi_l, (d_z_intersection, d_x_intersection), c2, c1)
-
-    # last_line_dx = np.cos(phi_last)
-    # last_line_dz = np.sin(phi_last)
-    # last_line_end_x_pos = intersection_x
-    # last_line_end_z_pos = intersection_z
-    # last_line_end_x_neg = intersection_x - last_line_dx * 0.25
-    # last_line_end_z_neg = intersection_z - last_line_dz * 0.25
-
-    # Line equation
-    a_intersection = np.tan(phi_last)
-    b_intersection = intersection_z - a_intersection * intersection_x
-
-    # Closest point to targets (x_f), (z_f)
-    # a4 = -1 / a_intersection
-    # b4 = z_f - a4 * x_f
-    # x_in = (b4 - b_intersection) / (a_intersection - a4)
-    # z_in = a4 * x_in + b4
 
     x_in = (z_f - b_intersection) / a_intersection
     z_in = z_f.copy()
 
     if plot:
         plot_setup(show=False, legend=False)
+        plt.title(f"Element at {x_a} m shooting")
+        plt.xlim([-0.1, 0.1])
         for idx, ray in enumerate(range(0, num_alpha_points, 10)):
             if idx == 0:
                 plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0", label="Incident ray")
@@ -583,10 +440,10 @@ def shoot_rays(x_a, z_a, x_f, z_f, alpha, plot=True):
 
             # plt.plot(x_f, z_f, 'o', markersize=0.1)
             # plot_line(phi_last[ray], intersection_x[ray], intersection_z[ray], scale=0.2, x_pos=False, z_pos=False)
-            # plot_normal(phi_h[ray], x_p[ray], z_p[ray])
-            # plot_normal(phi_c[ray], x_q[ray], z_q[ray])
-            # if ray < len(intersection_x):
-                # plot_normal(phi_intersection_incidence[ray], intersection_x[ray], intersection_z[ray])
+            plot_normal(phi_h[ray], x_p[ray], z_p[ray])
+            plot_normal(phi_c[ray], x_q[ray], z_q[ray])
+            if ray < len(intersection_x):
+                plot_normal(phi_intersection_incidence[ray], intersection_x[ray], intersection_z[ray])
         plt.legend()
         plt.show()
 
@@ -607,79 +464,187 @@ def dist(x1, z1, x2, z2):
 
 
 if __name__ == "__main__":
-    x_a = np.arange(num_elements, dtype=np.float64) * pitch
-    x_a = x_a - np.mean(x_a)
+    x_a_orig = np.arange(num_elements, dtype=np.float64) * pitch
+    x_a_orig = x_a_orig - np.mean(x_a_orig)
+
+    x_aux = list(x_a_orig)
+    emitter_element_idx = 32
+    x_aux.insert(emitter_element_idx, np.float64(0.0))
+    x_a = np.asarray(x_aux, dtype=np.float64)
     z_a = np.ones_like(x_a) * d
+    actual_num_elements = len(x_a)
 
-    xf = np.linspace(x_a[0], x_a[-1], num_alpha_points)
-    zf = np.ones((num_alpha_points,), dtype=np.float64) * d
+    zf_target_plane = np.ones((num_alpha_points,), dtype=np.float64) * d
+    alpha_angles = np.linspace(-alpha_max, alpha_max, num_alpha_points)
 
-    alpha = np.linspace(-alpha_max, alpha_max, num_alpha_points)
+    print(f'Shooting rays from element: {emitter_element_idx} (x={x_a[emitter_element_idx]:.4f} m)')
 
-    results = {x: [] for x in x_a}
-    alpha_correto = dict()
-    for m in range(num_elements - 1, 0, -1):
-        print(f'Element shooting: {m}')
-        for x in xf:
-            closest = shoot_rays_cost_func_aux(alpha, x_a[m], z_a[m], x, zf[0])
-            # print(f'{closest = }')
-            for idx, c in enumerate(closest):
-                # print(c)
-                if not np.isnan(c):
-                    results[x_a[m]].append(minimize(shoot_rays_cost_func, x0=(alpha), args=(x_a[m], z_a[m], x, zf[0], idx), tol=1e-16))
-            # print(f'{results[x_a[m]][-1] = }')
-                    _ = shoot_rays(x_a[m], z_a[m], xf, zf, results[x_a[m]][-1].x, plot=True)
-        # results.append(shoot_rays(x_a[m], z_a[m], xf, zf, alpha, plot=False))
-        # print(results)
+    for p_off in range(-20, 20, 1):
+        pipe_offset = p_off / 1000
 
-    element_idx = 0
-    tof = []
-    for ray in range(num_alpha_points):
-        hit = False
-        for elem_x in x_a:
-            if np.isclose(results[element_idx]["target_x"][ray], elem_x, atol=1e-5):
-                hit = True
-                tof.append(dist(x_a[element_idx], z_a[element_idx], results[element_idx]["lens_1_x"][ray], results[element_idx]["lens_1_z"][ray]) / c1)
-                tof[-1] += dist(results[element_idx]["lens_1_x"][ray], results[element_idx]["lens_1_z"][ray], results[element_idx]["pipe_x"][ray], results[element_idx]["pipe_z"][ray]) / c2
-                tof[-1] += dist(results[element_idx]["pipe_x"][ray], results[element_idx]["pipe_z"][ray], results[element_idx]["lens_2_x"][ray], results[element_idx]["lens_2_z"][ray]) / c2
-                tof[-1] += dist(results[element_idx]["lens_2_x"][ray], results[element_idx]["lens_2_z"][ray], results[element_idx]["target_x"][ray], results[element_idx]["target_z"][ray]) / c1
-                break
-        if not hit:
-            tof.append(0)
+        paths_data = shoot_rays(x_a[emitter_element_idx], z_a[emitter_element_idx], zf_target_plane, alpha_angles, plot=False)
 
-    tof = np.asarray(tof)
-    tof = tof.reshape(1, num_alpha_points)
+        best_paths_to_receivers = []
+        for r_idx in range(actual_num_elements): 
+            min_tof_for_receiver = float('inf')
+            alpha_idx_of_min_tof_ray = -1
+            for ray_idx in range(num_alpha_points): 
+                if np.isclose(paths_data["target_x"][ray_idx], x_a[r_idx], atol=1e-5): # Using your original tolerance
+                    tof = (dist(x_a[emitter_element_idx], z_a[emitter_element_idx], paths_data["lens_1_x"][ray_idx], paths_data["lens_1_z"][ray_idx]) / c1 +
+                        dist(paths_data["lens_1_x"][ray_idx], paths_data["lens_1_z"][ray_idx], paths_data["pipe_x"][ray_idx], paths_data["pipe_z"][ray_idx]) / c2 +
+                        dist(paths_data["pipe_x"][ray_idx], paths_data["pipe_z"][ray_idx], paths_data["lens_2_x"][ray_idx], paths_data["lens_2_z"][ray_idx]) / c2 +
+                        dist(paths_data["lens_2_x"][ray_idx], paths_data["lens_2_z"][ray_idx], paths_data["target_x"][ray_idx], paths_data["target_z"][ray_idx]) / c1)
+                    if tof < min_tof_for_receiver:
+                        min_tof_for_receiver = tof
+                        alpha_idx_of_min_tof_ray = ray_idx
+            
+            if alpha_idx_of_min_tof_ray != -1:
+                best_paths_to_receivers.append({
+                    "emitter_idx": emitter_element_idx,
+                    "receiver_idx": r_idx,
+                    "receiver_x_pos": x_a[r_idx], 
+                    "min_tof": min_tof_for_receiver,
+                    "alpha_emitter_deg": np.rad2deg(alpha_angles[alpha_idx_of_min_tof_ray]),
+                    "alpha_emitter_idx": alpha_idx_of_min_tof_ray 
+                })
+            else:
+                best_paths_to_receivers.append({
+                    "emitter_idx": emitter_element_idx,
+                    "receiver_idx": r_idx,
+                    "receiver_x_pos": x_a[r_idx], 
+                    "min_tof": -1.0,
+                    "alpha_emitter_deg": -999.9,
+                    "alpha_emitter_idx": -1
+                })
+        # --- End of lines from your snippet ---
 
-    plt.figure()
-    plt.imshow(tof)
-    plt.colorbar()
-    plt.axis('auto')
-    plt.title(f"Time of flight for element {element_idx}")
-    plt.show()
+        # --- Saving the collected information to a .npy file ---
+        if best_paths_to_receivers: # Check if there's data to save
+            # Define the data types for the structured array
+            # emitter_idx: int, receiver_idx: int, receiver_x_pos: float, 
+            # min_tof: float, alpha_emitter_deg: float, alpha_emitter_idx: int
+            dt = np.dtype([('emitter_idx', np.int32),
+                        ('receiver_idx', np.int32),
+                        ('receiver_x_pos', np.float64),
+                        ('min_tof', np.float64),
+                        ('alpha_emitter_deg', np.float64),
+                        ('alpha_emitter_idx', np.int32)])
+            
+            # Convert the list of dictionaries to a list of tuples
+            data_to_save_tuples = [(d['emitter_idx'], d['receiver_idx'], d['receiver_x_pos'], 
+                                    d['min_tof'], d['alpha_emitter_deg'], d['alpha_emitter_idx'])
+                                for d in best_paths_to_receivers]
+            
+            structured_array_to_save = np.array(data_to_save_tuples, dtype=dt)
+            
+            # Define filename (you can make this dynamic, e.g., based on emitter_element_idx)
+            output_filename = f"simulation_emitter_{emitter_element_idx}_pipe_offset_{pipe_offset*1000}mm.npy"
+            np.save(output_filename, structured_array_to_save)
+            print(f"\nSaved simulation data to {output_filename}")
 
-    for m in range(num_elements):
-        plot_setup(show=False)
-        for idx, ray in enumerate(range(0, num_alpha_points, 1)):
-            hit_another_elem = False
-            for elem_x in x_a:
-                if np.isclose(results[m]["target_x"][ray], elem_x, atol=1e-5):
-                    hit_another_elem = True
-                    break
-            if hit_another_elem:
-                if idx == 0:
-                    plt.plot([x_a[m], results[m]["lens_1_x"][ray]], [z_a[m], results[m]["lens_1_z"][ray]], "C0", label="Incident ray")
-                    plt.plot([results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray]], [results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray]], "C1", label="Refracted ray (c1->c2)")
-                    plt.plot([results[m]["pipe_x"][ray], results[m]["lens_2_x"][ray]], [results[m]["pipe_z"][ray], results[m]["lens_2_z"][ray]], "C2", label="Reflected ray")
-                    plt.plot([results[m]["lens_2_x"][ray], results[m]["target_x"][ray]], [results[m]["lens_2_z"][ray], results[m]["target_z"][ray]], "C3", label="Refracted ray (c2->c1)")
-                else:
-                    plt.plot([x_a[m], results[m]["lens_1_x"][ray]], [z_a[m], results[m]["lens_1_z"][ray]], "C0")
-                    plt.plot([results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray]], [results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray]], "C1")
-                    plt.plot([results[m]["pipe_x"][ray], results[m]["lens_2_x"][ray]], [results[m]["pipe_z"][ray], results[m]["lens_2_z"][ray]], "C2")
-                    plt.plot([results[m]["lens_2_x"][ray], results[m]["target_x"][ray]], [results[m]["lens_2_z"][ray], results[m]["target_z"][ray]], "C3")
+            # To load the data later:
+            # loaded_data = np.load(output_filename)
+            # print("\nExample of loaded data (first entry):")
+            # print(loaded_data[0])
+            # print(f"Receiver index from loaded: {loaded_data[0]['receiver_idx']}")
 
-        # for ray in range(0, num_alpha_points, 10):
-            # plt.plot([x_a[m], results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray], results[m]["lens_2_x"][ray], results[m]["target_x"][ray]],
-            #          [z_a[m], results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray], results[m]["lens_2_z"][ray], results[m]["target_z"][ray]],
-            #          "C2",
-            #          alpha=0.3)
-        plt.show()
+        else:
+            print("No data to save as no paths were found.")
+
+        # --- Plotting the collected information ---
+        # if not best_paths_to_receivers:
+        #     print("No rays from the emitter hit any receiver elements.")
+        # else:
+        #     print(f"\nFound {len(best_paths_to_receivers)} receiver elements hit by minimum TOF rays.")
+
+        #     plot_receiver_indices = [p["receiver_idx"] for p in best_paths_to_receivers]
+        #     plot_min_tofs = [p["min_tof"] for p in best_paths_to_receivers]
+        #     plot_alpha_degrees = [p["alpha_emitter_deg"] for p in best_paths_to_receivers]
+
+        #     fig, ax = plt.subplots(figsize=(14, 8))
+        #     scatter_plot = ax.scatter(plot_receiver_indices, plot_min_tofs,
+        #                             c=plot_alpha_degrees, cmap='viridis',
+        #                             s=150, alpha=0.8, edgecolors='k')
+
+        #     ax.set_xlabel("Hit Element Index (Receiver)")
+        #     ax.set_ylabel("Minimum Time of Flight (s)")
+        #     ax.set_title(f"Minimum TOF to Receiver Elements (Emitter Element: {emitter_element_idx})")
+
+        #     cbar = fig.colorbar(scatter_plot, ax=ax)
+        #     cbar.set_label("Emitter's Initial Alpha for Ray (degrees)")
+
+        #     if plot_receiver_indices:
+        #         ax.set_xticks(np.unique(plot_receiver_indices).astype(int))
+
+        #     ax.grid(True, linestyle=':', alpha=0.7)
+            
+        #     annot = ax.annotate("", xy=(0,0), xytext=(15,15), textcoords="offset points",
+        #                         bbox=dict(boxstyle="round,pad=0.5", fc="yellow"),
+        #                         arrowprops=dict(arrowstyle="->"))
+        #     annot.set_visible(False)
+        #     hover_data_points = best_paths_to_receivers
+
+
+        #     def update_annot(ind):
+        #         pos = scatter_plot.get_offsets()[ind["ind"][0]]
+        #         annot.xy = pos
+
+        #         point_data = hover_data_points[ind["ind"][0]]
+                
+        #         text = (f"Receiver Idx: {point_data['receiver_idx']}\n"
+        #                 f"Min TOF: {point_data['min_tof']:.3e} s\n"
+        #                 f"Emitter Alpha: {point_data['alpha_emitter_deg']:.2f}°")
+        #         annot.set_text(text)
+
+        #     def hover(event):
+        #         """Event handler for mouse motion."""
+        #         vis = annot.get_visible()
+        #         if event.inaxes == ax:
+        #             cont, ind = scatter_plot.contains(event)
+        #             if cont:
+        #                 update_annot(ind)
+        #                 annot.set_visible(True)
+        #                 fig.canvas.draw_idle()
+        #             else:
+        #                 if vis:
+        #                     annot.set_visible(False)
+        #                     fig.canvas.draw_idle()
+
+        #     fig.canvas.mpl_connect("motion_notify_event", hover)
+            
+        #     plt.tight_layout()
+        #     plt.show()
+
+            # --- Plotting the actual best ray paths (your existing code for this can follow) ---
+            if False: # You can set a flag to enable/disable this plot easily
+                plot_setup(show=False, legend=False) 
+                plt.title(f"Ray Paths for Min TOF (Emitter: {emitter_element_idx} to various Receivers)")
+                from matplotlib.lines import Line2D # Ensure Line2D is imported
+                legend_elements = [
+                    Line2D([0], [0], color="C0", lw=1.5, label='Emitter to Lens'),
+                    Line2D([0], [0], color="C1", lw=1.5, label='Lens to Pipe'),
+                    Line2D([0], [0], color="C2", lw=1.5, label='Pipe to Lens (Reflected)'),
+                    Line2D([0], [0], color="C3", lw=1.5, label='Lens to Receiver'),
+                    plt.scatter([], [], color='magenta', s=60, edgecolors='black', label='Emitter Element'),
+                    plt.scatter([], [], color='red', s=60, edgecolors='black', label='Receiver Element (Hit)')
+                ]
+                plt.scatter(x_a[emitter_element_idx], z_a[emitter_element_idx], color='magenta', s=60, edgecolors='black', zorder=10)
+                for path_info in best_paths_to_receivers:
+                    ray_idx = path_info["alpha_emitter_idx"] 
+                    receiver_idx_hit = path_info["receiver_idx"]
+                    p_lens1_x = paths_data["lens_1_x"][ray_idx]
+                    p_lens1_z = paths_data["lens_1_z"][ray_idx]
+                    p_pipe_x = paths_data["pipe_x"][ray_idx]
+                    p_pipe_z = paths_data["pipe_z"][ray_idx]
+                    p_lens2_x = paths_data["lens_2_x"][ray_idx]
+                    p_lens2_z = paths_data["lens_2_z"][ray_idx]
+                    p_target_x = paths_data["target_x"][ray_idx] 
+                    p_target_z = paths_data["target_z"][ray_idx]
+                    plt.plot([x_a[emitter_element_idx], p_lens1_x], [z_a[emitter_element_idx], p_lens1_z], "C0", alpha=0.6, linewidth=0.8)
+                    plt.plot([p_lens1_x, p_pipe_x], [p_lens1_z, p_pipe_z], "C1", alpha=0.6, linewidth=0.8)
+                    plt.plot([p_pipe_x, p_lens2_x], [p_pipe_z, p_lens2_z], "C2", alpha=0.6, linewidth=0.8)
+                    plt.plot([p_lens2_x, p_target_x], [p_lens2_z, p_target_z], "C3", alpha=0.6, linewidth=0.8)
+                    plt.scatter(x_a[receiver_idx_hit], z_a[receiver_idx_hit], color='red', s=40, edgecolors='black', zorder=9, alpha=0.7)
+                plt.legend(handles=legend_elements, loc='upper right', fontsize='small')
+                plt.axis("equal") 
+                plt.show()
