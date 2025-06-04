@@ -1,24 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-
-c1 = np.float64(6400)
-c2 = np.float64(1483)
-c3 = np.float64(5600)
-
-l0 = np.float64(0.12156646438729327)
-h0 = np.float64(0.08843353561270673)
-d = l0 + h0
-
-# Maximum sectorial angle (radians)
-alpha_max = np.float64(50.62033040986099 * (np.pi / 180))
-r_outer = np.float64(0.07)
-
-num_elements = np.int64(64)
-pitch = np.float64(0.0006)
-
-num_alpha_points = np.int64(181 * 5)
-
-pipe_offset = 0.004
+import csv
 
 
 def find_line_curve_intersection(x_line, y_line, x_curve, y_curve):
@@ -464,97 +446,78 @@ def dist(x1, z1, x2, z2):
 
 
 if __name__ == "__main__":
-    x_a = np.arange(num_elements, dtype=np.float64) * pitch
-    x_a = x_a - np.mean(x_a)
-    x_aux = list(x_a)
-    x_aux.insert(32, np.float64(0.0))
-    x_a = np.asarray(x_aux, dtype=np.float64)
-    z_a = np.ones_like(x_a) * d
+    c1 = np.float64(6400)
+    c2 = np.float64(1483)
+    c3 = np.float64(5600)
 
-    xf = np.linspace(x_a[0], x_a[-1], num_alpha_points)
-    zf = np.ones((num_alpha_points,), dtype=np.float64) * d
+    l0 = np.float64(0.12156646438729327)
+    h0 = np.float64(0.08843353561270673)
+    d = l0 + h0
 
-    alpha = np.linspace(-alpha_max, alpha_max, num_alpha_points)
+    alpha_max = np.float64(50.62033040986099 * (np.pi / 180))
 
-    element_idx = 32
-    results = {idx: {} for idx in range(num_elements)}
-    for m in range(element_idx, element_idx + 1):
-        print(f'Element shooting: {m}')
-        results[m] = shoot_rays(x_a[m], z_a[m], zf, alpha, plot=True)
+    num_elements = np.int64(64)
+    pitch = np.float64(0.0006)
 
-    tof_d = {idx: [] for idx in range(num_elements)}
-    tof_ray = {idx: [] for idx in range(num_elements)}
-    for ray in range(num_alpha_points):
-        for elem_idx, elem_x in enumerate(x_a):
-            if np.isclose(results[element_idx]["target_x"][ray], elem_x, atol=1e-5):
-                tof_d[elem_idx].append(dist(x_a[element_idx], z_a[element_idx], results[element_idx]["lens_1_x"][ray], results[element_idx]["lens_1_z"][ray]) / c1)
-                tof_ray[elem_idx].append(alpha[ray])
-                tof_d[elem_idx][-1] += dist(results[element_idx]["lens_1_x"][ray], results[element_idx]["lens_1_z"][ray], results[element_idx]["pipe_x"][ray], results[element_idx]["pipe_z"][ray]) / c2
-                tof_d[elem_idx][-1] += dist(results[element_idx]["pipe_x"][ray], results[element_idx]["pipe_z"][ray], results[element_idx]["lens_2_x"][ray], results[element_idx]["lens_2_z"][ray]) / c2
-                tof_d[elem_idx][-1] += dist(results[element_idx]["lens_2_x"][ray], results[element_idx]["lens_2_z"][ray], results[element_idx]["target_x"][ray], results[element_idx]["target_z"][ray]) / c1
-                break
+    num_alpha_points = np.int64(181 * 5)
 
-    tof = []
-    tof_rray = []
-    for elem_idx in range(num_elements):
-        if len(tof_d[elem_idx]) > 0:
-            tof_ray[elem_idx] = tof_ray[elem_idx][tof_d[elem_idx].index(min(tof_d[elem_idx]))]
-            tof_d[elem_idx] = min(tof_d[elem_idx])
-        else:
-            tof_ray[elem_idx] = -1
-            tof_d[elem_idx] = 0
-        tof.append(tof_d[elem_idx])
-        tof_rray.append(tof_ray[elem_idx])
+    for r in range(1, 10):
+        for p_o in range(-10, 10):
+            r_outer = np.float64(r * 1e-2)
+            pipe_offset = np.float64(p_o * 1e-3)
 
-    tof = np.asarray(tof)
-    tof_rray = np.asarray(tof_rray)
-    print(tof_rray)
+            x_a = np.arange(num_elements, dtype=np.float64) * pitch
+            x_a = x_a - np.mean(x_a)
+            x_aux = list(x_a)
+            x_aux.insert(32, np.float64(0.0))
+            x_a = np.asarray(x_aux, dtype=np.float64)
+            z_a = np.ones_like(x_a) * d
 
-    plt.figure()
-    plt.plot(tof, 'o-')
-    plt.axis('auto')
-    plt.xlabel("Element Focused (index)")
-    plt.ylabel("Time of Flight (seconds)")
-    plt.show()
+            xf = np.linspace(x_a[0], x_a[-1], num_alpha_points)
+            zf = np.ones((num_alpha_points,), dtype=np.float64) * d
 
-    # filtered_results = shoot_rays(x_a[element_idx], z_a[element_idx], np.full((tof_rray.shape), zf[0]), tof_rray)
+            alpha = np.linspace(-alpha_max, alpha_max, num_alpha_points)
 
-    print(tof_rray)
-    plot_setup(show=False)
-    for idx, ray in enumerate(tof_rray):
-        if ray != -1.:
-            if idx == 0:
-                plt.plot([x_a[element_idx], results[element_idx]["lens_1_x"][ray]], [z_a[element_idx], results[element_idx]["lens_1_z"][ray]], "C0", label="Incident ray")
-                plt.plot([results[element_idx]["lens_1_x"][ray], results[element_idx]["pipe_x"][ray]], [results[element_idx]["lens_1_z"][ray], results[element_idx]["pipe_z"][ray]], "C1", label="Refracted ray (c1->c2)")
-                plt.plot([results[element_idx]["pipe_x"][ray], results[element_idx]["lens_2_x"][ray]], [results[element_idx]["pipe_z"][ray], results[element_idx]["lens_2_z"][ray]], "C2", label="Reflected ray")
-                plt.plot([results[element_idx]["lens_2_x"][ray], results[element_idx]["target_x"][ray]], [results[element_idx]["lens_2_z"][ray], results[element_idx]["target_z"][ray]], "C3", label="Refracted ray (c2->c1)")
-            else:
-                plt.plot([x_a[element_idx], results[element_idx]["lens_1_x"][ray]], [z_a[element_idx], results[element_idx]["lens_1_z"][ray]], "C0")
-                plt.plot([results[element_idx]["lens_1_x"][ray], results[element_idx]["pipe_x"][ray]], [results[element_idx]["lens_1_z"][ray], results[element_idx]["pipe_z"][ray]], "C1")
-                plt.plot([results[element_idx]["pipe_x"][ray], results[element_idx]["lens_2_x"][ray]], [results[element_idx]["pipe_z"][ray], results[element_idx]["lens_2_z"][ray]], "C2")
-                plt.plot([results[element_idx]["lens_2_x"][ray], results[element_idx]["target_x"][ray]], [results[element_idx]["lens_2_z"][ray], results[element_idx]["target_z"][ray]], "C3")
+            element_idx = 32
+            results = shoot_rays(x_a[element_idx], z_a[element_idx], zf, alpha, plot=False)
 
-    plt.show()
+            # csv_header = ["alpha", "offset", "radius", "hitted", "tof_1", "tof_2", "tof_3", "tof_4"]
+            filename = "database.csv"
 
-    for m in range(element_idx, element_idx + 1):
-        plot_setup(show=False)
-        plt.title(f"Element {m} shooting")
-        for idx, ray in enumerate(range(0, num_alpha_points, 1)):
-            hit_another_elem = False
-            for elem_x in x_a:
-                if np.isclose(results[m]["target_x"][ray], elem_x, atol=1e-5):
-                    hit_another_elem = True
-                    break
-            if hit_another_elem:
-                if idx == 0:
-                    plt.plot([x_a[m], results[m]["lens_1_x"][ray]], [z_a[m], results[m]["lens_1_z"][ray]], "C0", label="Incident ray")
-                    plt.plot([results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray]], [results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray]], "C1", label="Refracted ray (c1->c2)")
-                    plt.plot([results[m]["pipe_x"][ray], results[m]["lens_2_x"][ray]], [results[m]["pipe_z"][ray], results[m]["lens_2_z"][ray]], "C2", label="Reflected ray")
-                    plt.plot([results[m]["lens_2_x"][ray], results[m]["target_x"][ray]], [results[m]["lens_2_z"][ray], results[m]["target_z"][ray]], "C3", label="Refracted ray (c2->c1)")
-                else:
-                    plt.plot([x_a[m], results[m]["lens_1_x"][ray]], [z_a[m], results[m]["lens_1_z"][ray]], "C0")
-                    plt.plot([results[m]["lens_1_x"][ray], results[m]["pipe_x"][ray]], [results[m]["lens_1_z"][ray], results[m]["pipe_z"][ray]], "C1")
-                    plt.plot([results[m]["pipe_x"][ray], results[m]["lens_2_x"][ray]], [results[m]["pipe_z"][ray], results[m]["lens_2_z"][ray]], "C2")
-                    plt.plot([results[m]["lens_2_x"][ray], results[m]["target_x"][ray]], [results[m]["lens_2_z"][ray], results[m]["target_z"][ray]], "C3")
+            for ray in range(num_alpha_points):
+                newData = []
+                newData.append(alpha[ray])
+                newData.append(pipe_offset)
+                newData.append(r_outer)
+                newData.append(False)
+                newData.append(dist(x_a[element_idx], z_a[element_idx], results["lens_1_x"][ray], results["lens_1_z"][ray]) / c1)
+                newData.append(dist(results["lens_1_x"][ray], results["lens_1_z"][ray], results["pipe_x"][ray], results["pipe_z"][ray]) / c2)
+                newData.append(dist(results["pipe_x"][ray], results["pipe_z"][ray], results["lens_2_x"][ray], results["lens_2_z"][ray]) / c2)
+                newData.append(dist(results["lens_2_x"][ray], results["lens_2_z"][ray], results["target_x"][ray], results["target_z"][ray]) / c1)
+                for elem_idx, elem_x in enumerate(x_a):
+                    if np.isclose(results["target_x"][ray], elem_x, atol=1e-5):
+                        newData[3] = True
+                        break
+                with open(filename, 'a+', newline='') as csvfile:
+                    csvwriter = csv.writer(csvfile)
+                    csvwriter.writerow(newData)
 
-        plt.show()
+    # plot_setup(show=False)
+    # for idx, ray in enumerate(range(0, num_alpha_points, 1)):
+    #     hit_another_elem = False
+    #     for elem_x in x_a:
+    #         if np.isclose(results["target_x"][ray], elem_x, atol=1e-5):
+    #             hit_another_elem = True
+    #             break
+    #     if hit_another_elem:
+    #         if idx == 0:
+    #             plt.plot([x_a[element_idx], results["lens_1_x"][ray]], [z_a[element_idx], results["lens_1_z"][ray]], "C0", label="Incident ray")
+    #             plt.plot([results["lens_1_x"][ray], results["pipe_x"][ray]], [results["lens_1_z"][ray], results["pipe_z"][ray]], "C1", label="Refracted ray (c1->c2)")
+    #             plt.plot([results["pipe_x"][ray], results["lens_2_x"][ray]], [results["pipe_z"][ray], results["lens_2_z"][ray]], "C2", label="Reflected ray")
+    #             plt.plot([results["lens_2_x"][ray], results["target_x"][ray]], [results["lens_2_z"][ray], results["target_z"][ray]], "C3", label="Refracted ray (c2->c1)")
+    #         else:
+    #             plt.plot([x_a[element_idx], results["lens_1_x"][ray]], [z_a[element_idx], results["lens_1_z"][ray]], "C0")
+    #             plt.plot([results["lens_1_x"][ray], results["pipe_x"][ray]], [results["lens_1_z"][ray], results["pipe_z"][ray]], "C1")
+    #             plt.plot([results["pipe_x"][ray], results["lens_2_x"][ray]], [results["pipe_z"][ray], results["lens_2_z"][ray]], "C2")
+    #             plt.plot([results["lens_2_x"][ray], results["target_x"][ray]], [results["lens_2_z"][ray], results["target_z"][ray]], "C3")
+    # plt.show()
