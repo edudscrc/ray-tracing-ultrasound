@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import csv
+import pandas as pd
 
 
 def find_line_curve_intersection(x_line, y_line, x_curve, y_curve):
@@ -461,63 +462,86 @@ if __name__ == "__main__":
 
     num_alpha_points = np.int64(181 * 5)
 
-    for r in range(1, 10):
-        for p_o in range(-10, 10):
-            r_outer = np.float64(r * 1e-2)
-            pipe_offset = np.float64(p_o * 1e-3)
+    r_outer = np.float64(0.07)
+    pipe_offset = np.float64(0.0)
 
-            x_a = np.arange(num_elements, dtype=np.float64) * pitch
-            x_a = x_a - np.mean(x_a)
-            x_aux = list(x_a)
-            x_aux.insert(32, np.float64(0.0))
-            x_a = np.asarray(x_aux, dtype=np.float64)
-            z_a = np.ones_like(x_a) * d
+    x_a = np.arange(num_elements, dtype=np.float64) * pitch
+    x_a = x_a - np.mean(x_a)
+    x_aux = list(x_a)
+    x_aux.insert(32, np.float64(0.0))
+    x_a = np.asarray(x_aux, dtype=np.float64)
+    z_a = np.ones_like(x_a) * d
 
-            xf = np.linspace(x_a[0], x_a[-1], num_alpha_points)
-            zf = np.ones((num_alpha_points,), dtype=np.float64) * d
+    xf = np.linspace(x_a[0], x_a[-1], num_alpha_points)
+    zf = np.ones((num_alpha_points,), dtype=np.float64) * d
 
-            alpha = np.linspace(-alpha_max, alpha_max, num_alpha_points)
+    alpha = np.linspace(-alpha_max, alpha_max, num_alpha_points)
 
-            element_idx = 32
-            results = shoot_rays(x_a[element_idx], z_a[element_idx], zf, alpha, plot=False)
+    element_idx = 32
+    results = shoot_rays(x_a[element_idx], z_a[element_idx], zf, alpha, plot=False)
 
-            # csv_header = ["alpha", "offset", "radius", "hitted", "tof_1", "tof_2", "tof_3", "tof_4"]
-            filename = "database.csv"
+    csv_header = ["alpha", "offset", "radius", "hitted", "tof_1", "tof_2", "tof_3", "tof_4"]
+    
+    filename = "database.csv"
 
-            for ray in range(num_alpha_points):
-                newData = []
-                newData.append(alpha[ray])
-                newData.append(pipe_offset)
-                newData.append(r_outer)
-                newData.append(False)
-                newData.append(dist(x_a[element_idx], z_a[element_idx], results["lens_1_x"][ray], results["lens_1_z"][ray]) / c1)
-                newData.append(dist(results["lens_1_x"][ray], results["lens_1_z"][ray], results["pipe_x"][ray], results["pipe_z"][ray]) / c2)
-                newData.append(dist(results["pipe_x"][ray], results["pipe_z"][ray], results["lens_2_x"][ray], results["lens_2_z"][ray]) / c2)
-                newData.append(dist(results["lens_2_x"][ray], results["lens_2_z"][ray], results["target_x"][ray], results["target_z"][ray]) / c1)
-                for elem_idx, elem_x in enumerate(x_a):
-                    if np.isclose(results["target_x"][ray], elem_x, atol=1e-5):
-                        newData[3] = True
-                        break
-                with open(filename, 'a+', newline='') as csvfile:
-                    csvwriter = csv.writer(csvfile)
-                    csvwriter.writerow(newData)
+    df = pd.read_csv(filename)
 
-    # plot_setup(show=False)
-    # for idx, ray in enumerate(range(0, num_alpha_points, 1)):
-    #     hit_another_elem = False
-    #     for elem_x in x_a:
-    #         if np.isclose(results["target_x"][ray], elem_x, atol=1e-5):
-    #             hit_another_elem = True
-    #             break
-    #     if hit_another_elem:
-    #         if idx == 0:
-    #             plt.plot([x_a[element_idx], results["lens_1_x"][ray]], [z_a[element_idx], results["lens_1_z"][ray]], "C0", label="Incident ray")
-    #             plt.plot([results["lens_1_x"][ray], results["pipe_x"][ray]], [results["lens_1_z"][ray], results["pipe_z"][ray]], "C1", label="Refracted ray (c1->c2)")
-    #             plt.plot([results["pipe_x"][ray], results["lens_2_x"][ray]], [results["pipe_z"][ray], results["lens_2_z"][ray]], "C2", label="Reflected ray")
-    #             plt.plot([results["lens_2_x"][ray], results["target_x"][ray]], [results["lens_2_z"][ray], results["target_z"][ray]], "C3", label="Refracted ray (c2->c1)")
-    #         else:
-    #             plt.plot([x_a[element_idx], results["lens_1_x"][ray]], [z_a[element_idx], results["lens_1_z"][ray]], "C0")
-    #             plt.plot([results["lens_1_x"][ray], results["pipe_x"][ray]], [results["lens_1_z"][ray], results["pipe_z"][ray]], "C1")
-    #             plt.plot([results["pipe_x"][ray], results["lens_2_x"][ray]], [results["pipe_z"][ray], results["lens_2_z"][ray]], "C2")
-    #             plt.plot([results["lens_2_x"][ray], results["target_x"][ray]], [results["lens_2_z"][ray], results["target_z"][ray]], "C3")
-    # plt.show()
+    tolerance = 1e-9
+    condition_offset = np.isclose(df['offset'], pipe_offset, atol=tolerance)
+    condition_radius = np.isclose(df['radius'], r_outer, atol=tolerance)
+
+    combined_condition = (condition_offset) & condition_radius
+
+    filtered_df = df[combined_condition]
+
+    filename_compare = "compare.csv"
+
+    with open(filename_compare, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(csv_header)
+
+    for ray in range(num_alpha_points):
+        newData = []
+        newData.append(alpha[ray])
+        newData.append(pipe_offset)
+        newData.append(r_outer)
+        newData.append(False)
+        newData.append(dist(x_a[element_idx], z_a[element_idx], results["lens_1_x"][ray], results["lens_1_z"][ray]) / c1)
+        newData.append(dist(results["lens_1_x"][ray], results["lens_1_z"][ray], results["pipe_x"][ray], results["pipe_z"][ray]) / c2)
+        newData.append(dist(results["pipe_x"][ray], results["pipe_z"][ray], results["lens_2_x"][ray], results["lens_2_z"][ray]) / c2)
+        newData.append(dist(results["lens_2_x"][ray], results["lens_2_z"][ray], results["target_x"][ray], results["target_z"][ray]) / c1)
+        for elem_idx, elem_x in enumerate(x_a):
+            if np.isclose(results["target_x"][ray], elem_x, atol=1e-5):
+                newData[3] = True
+                break
+        with open(filename_compare, 'a+', newline='') as csvfile:
+            csvwriter = csv.writer(csvfile)
+            csvwriter.writerow(newData)
+
+    def process_tofs(row):
+        tof_values = row[['tof_1', 'tof_2','tof_3', 'tof_4']]
+
+        sum_tof = np.nan
+
+        if not tof_values.isnull().any():
+            sum_tof = tof_values.sum()
+
+        return sum_tof
+
+    tofs_database = np.asarray(filtered_df.apply(process_tofs, axis=1).tolist(), dtype=np.float64)
+
+    df_compare = pd.read_csv(filename_compare)
+
+    num_hitted = df_compare['hitted'].sum()
+
+    tofs_compare = np.asarray(df_compare.apply(process_tofs, axis=1).tolist(), dtype=np.float64)
+
+    individual_errors = tofs_database - tofs_compare
+
+    print(individual_errors)
+
+    print(f'{num_hitted = }')
+
+    mse = np.sum(np.square(individual_errors)) / num_hitted
+
+    print(f'{mse = }')
