@@ -462,8 +462,8 @@ if __name__ == "__main__":
 
     num_alpha_points = np.int64(181 * 5)
 
-    r_outer = np.float64(0.07)
-    pipe_offset = np.float64(0.0)
+    r_outer = np.float64(0.037)
+    pipe_offset = np.float64(0.0038)
 
     x_a = np.arange(num_elements, dtype=np.float64) * pitch
     x_a = x_a - np.mean(x_a)
@@ -486,11 +486,16 @@ if __name__ == "__main__":
 
     df = pd.read_csv(filename)
 
-    tolerance = 1e-9
-    condition_offset = np.isclose(df['offset'], pipe_offset, atol=tolerance)
-    condition_radius = np.isclose(df['radius'], r_outer, atol=tolerance)
+    offset_closest_value = np.argmin(np.abs(df['offset'].to_numpy() - pipe_offset))
+    offset_closest_value = df['offset'].to_numpy()[offset_closest_value]
 
-    combined_condition = (condition_offset) & condition_radius
+    radius_closest_value = np.argmin(np.abs(df['radius'].to_numpy() - r_outer))
+    radius_closest_value = df['radius'].to_numpy()[radius_closest_value]
+
+    condition_offset = df['offset'] == offset_closest_value
+    condition_radius = df['radius'] == radius_closest_value
+
+    combined_condition = (condition_offset) & (condition_radius)
 
     filtered_df = df[combined_condition]
 
@@ -542,6 +547,7 @@ if __name__ == "__main__":
 
     print(f'{num_hitted = }')
 
-    mse = np.sum(np.square(individual_errors)) / num_hitted
+    non_nan_mask = ~np.isnan(individual_errors)
+    mse = np.sum(np.square(individual_errors[non_nan_mask])) / num_hitted
 
     print(f'{mse = }')

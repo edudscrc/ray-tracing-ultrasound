@@ -461,8 +461,8 @@ if __name__ == "__main__":
 
     num_alpha_points = np.int64(181 * 5)
 
-    for r in range(1, 10):
-        for p_o in range(-10, 10):
+    for r in range(1, 10 + 1):
+        for p_o in range(-10, 10 + 1):
             r_outer = np.float64(r * 1e-2)
             pipe_offset = np.float64(p_o * 1e-3)
 
