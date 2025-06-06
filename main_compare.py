@@ -409,7 +409,7 @@ def shoot_rays(x_a, z_a, z_f, alpha, plot=True):
         plot_setup(show=False, legend=False)
         plt.title(f"Element at {x_a} m shooting")
         plt.xlim([-0.1, 0.1])
-        for idx, ray in enumerate(range(0, num_alpha_points, 10)):
+        for idx, ray in enumerate(range(0, num_alpha_points, 1)):
             if idx == 0:
                 plt.plot([x_a, x_p[ray]], [z_a, z_p[ray]], "C0", label="Incident ray")
                 plt.plot([x_p[ray], x_q[ray]], [z_p[ray], z_q[ray]], "C1", label="Refracted ray (c1->c2)")
@@ -460,7 +460,7 @@ if __name__ == "__main__":
     num_elements = np.int64(64)
     pitch = np.float64(0.0006)
 
-    num_alpha_points = np.int64(181 * 5)
+    num_alpha_points = np.int64(181 * 10)
 
     r_outer = np.float64(0.037)
     pipe_offset = np.float64(0.0038)
@@ -478,7 +478,7 @@ if __name__ == "__main__":
     alpha = np.linspace(-alpha_max, alpha_max, num_alpha_points)
 
     element_idx = 32
-    results = shoot_rays(x_a[element_idx], z_a[element_idx], zf, alpha, plot=False)
+    results = shoot_rays(x_a[element_idx], z_a[element_idx], zf, alpha, plot=True)
 
     csv_header = ["alpha", "offset", "radius", "hitted", "tof_1", "tof_2", "tof_3", "tof_4"]
     
@@ -516,7 +516,7 @@ if __name__ == "__main__":
         newData.append(dist(results["pipe_x"][ray], results["pipe_z"][ray], results["lens_2_x"][ray], results["lens_2_z"][ray]) / c2)
         newData.append(dist(results["lens_2_x"][ray], results["lens_2_z"][ray], results["target_x"][ray], results["target_z"][ray]) / c1)
         for elem_idx, elem_x in enumerate(x_a):
-            if np.isclose(results["target_x"][ray], elem_x, atol=1e-5):
+            if np.isclose(results["target_x"][ray], elem_x, atol=1e-4):
                 newData[3] = True
                 break
         with open(filename_compare, 'a+', newline='') as csvfile:
