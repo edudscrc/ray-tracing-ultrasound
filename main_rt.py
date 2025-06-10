@@ -481,26 +481,27 @@ if __name__ == "__main__":
             element_idx = 32
             results = shoot_rays(x_a[element_idx], z_a[element_idx], zf, alpha, plot=False)
 
-            # csv_header = ["alpha", "offset", "radius", "hitted", "tof_1", "tof_2", "tof_3", "tof_4"]
-            filename = "database.csv"
+            # csv_header = ["elem_idx", "offset", "radius", "hitted", "tof_total"]
+            filename = "database_2.csv"
 
-            for ray in range(num_alpha_points):
-                newData = []
-                newData.append(alpha[ray])
-                newData.append(pipe_offset)
-                newData.append(r_outer)
-                newData.append(False)
-                newData.append(dist(x_a[element_idx], z_a[element_idx], results["lens_1_x"][ray], results["lens_1_z"][ray]) / c1)
-                newData.append(dist(results["lens_1_x"][ray], results["lens_1_z"][ray], results["pipe_x"][ray], results["pipe_z"][ray]) / c2)
-                newData.append(dist(results["pipe_x"][ray], results["pipe_z"][ray], results["lens_2_x"][ray], results["lens_2_z"][ray]) / c2)
-                newData.append(dist(results["lens_2_x"][ray], results["lens_2_z"][ray], results["target_x"][ray], results["target_z"][ray]) / c1)
-                for elem_idx, elem_x in enumerate(x_a):
-                    if np.isclose(results["target_x"][ray], elem_x, atol=1e-5):
-                        newData[3] = True
+            for elem_idx, elem_x in enumerate(x_a):
+                new_data = []
+                new_data.append(elem_idx)
+                new_data.append(pipe_offset)
+                new_data.append(r_outer)                
+                new_data.append(False)
+                new_data.append(0)
+                for ray in range(num_alpha_points):
+                    if np.isclose(results["target_x"][ray], elem_x, atol=1e-6):
+                        new_data[-2] = True
+                        new_data[-1] = dist(x_a[element_idx], z_a[element_idx], results["lens_1_x"][ray], results["lens_1_z"][ray]) / c1
+                        new_data[-1] += dist(results["lens_1_x"][ray], results["lens_1_z"][ray], results["pipe_x"][ray], results["pipe_z"][ray]) / c2
+                        new_data[-1] += dist(results["pipe_x"][ray], results["pipe_z"][ray], results["lens_2_x"][ray], results["lens_2_z"][ray]) / c2
+                        new_data[-1] += dist(results["lens_2_x"][ray], results["lens_2_z"][ray], results["target_x"][ray], results["target_z"][ray]) / c1
                         break
                 with open(filename, 'a+', newline='') as csvfile:
                     csvwriter = csv.writer(csvfile)
-                    csvwriter.writerow(newData)
+                    csvwriter.writerow(new_data)
 
     # plot_setup(show=False)
     # for idx, ray in enumerate(range(0, num_alpha_points, 1)):
